@@ -3,6 +3,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # build 容器走宿主机网络,这样能通过 127.0.0.1:5432 连到下面的 postgres
+      network: host
+      args:
+        DATABASE_URL: ${BUILD_DATABASE_URL}
     image: dowhat-app:latest
     container_name: dowhat-app
     restart: unless-stopped
@@ -28,6 +32,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-dowhat}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dowhat}
       POSTGRES_DB: ${POSTGRES_DB:-dowhat}
+    # 仅暴露到宿主机 loopback,外网无法直接访问;给 build 容器(network:host)用
+    ports:
+      - "127.0.0.1:5432:5432"
     volumes:
       - dowhat_pg_data:/var/lib/postgresql/data
     healthcheck:

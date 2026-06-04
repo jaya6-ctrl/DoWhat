@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-FROM node:20-alpine AS base
+FROM node:22-alpine AS base
 RUN apk add --no-cache libc6-compat openssl
 RUN corepack enable && corepack prepare pnpm@11.5.1 --activate
 WORKDIR /app
@@ -14,7 +14,14 @@ RUN pnpm install --frozen-lockfile
 FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# build 期需要连真实数据库:
+#   1) prisma migrate deploy 推 schema
+#   2) Next.js 在 generateStaticParams / ISR 预渲染时会查 DB
+# DATABASE_URL 通过 docker-compose build args 传入(指向宿主机 loopback 上的 postgres)
+ARG DATABASE_URL
+ENV DATABASE_URL=$DATABASE_URL
 RUN pnpm exec prisma generate
+RUN pnpm exec prisma migrate deploy
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm build
 
