@@ -3,9 +3,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      # build 容器加入 dowhat-net,从而可以直接通过服务名 postgres 解析
-      # (需要 deploy.sh 先 docker compose up -d postgres 把网络和 postgres 拉起来)
-      network: dowhat-net
+      # buildkit 只支持 host/none/default,用 host 让 build 容器共享宿主机网络命名空间
+      # build 容器里访问 localhost:5432 == 宿主机 loopback 上 postgres 暴露的 5432
+      network: host
       args:
         DATABASE_URL: ${BUILD_DATABASE_URL}
     image: dowhat-app:latest
@@ -37,6 +37,9 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-dowhat}
     networks:
       - dowhat-net
+    # 仅绑宿主机 loopback,外网访问不到;build 时通过 network:host 走 localhost 连过来
+    ports:
+      - "127.0.0.1:5432:5432"
     volumes:
       - dowhat_pg_data:/var/lib/postgresql/data
     healthcheck:
