@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>俄罗斯方块</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; height: 100%; background: #0e1116; color: #e8eaed; font-family: system-ui, sans-serif; }
+      body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
+      h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: 1px; color: #9ca3af; }
+      .stats { display: flex; gap: 18px; font-size: 14px; }
+      .stats b { color: #ff6a00; font-size: 18px; }
+      .wrap { display: flex; gap: 12px; align-items: flex-start; }
+      canvas { background: #1a1f2a; border-radius: 8px; touch-action: none; }
+      #board { max-width: 60vw; max-height: 70vh; }
+      #next { background: #1a1f2a; border-radius: 6px; }
+      .side { display: flex; flex-direction: column; gap: 8px; font-size: 12px; color: #9ca3af; }
+      .hint { font-size: 11px; color: #6b7280; max-width: 320px; text-align: center; }
+      button { background: #ff6a00; color: #fff; border: 0; padding: 8px 16px; border-radius: 6px; font-size: 14px; cursor: pointer; }
+      button:hover { background: #e85f00; }
+      #overlay { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; gap: 16px; background: rgba(0,0,0,0.75); }
+      #overlay.show { display: flex; }
+      #overlay .title { font-size: 28px; font-weight: 700; }
+      .touchpad { display: none; gap: 8px; margin-top: 6px; }
+      .touchpad button { width: 60px; padding: 12px 0; background: #2a2f3a; }
+      @media (max-width: 640px) { .touchpad { display: flex; } }
+    </style>
+  </head>
+  <body>
+    <h1>TETRIS · 俄罗斯方块</h1>
+    <div class="stats">
+      <div>分数 <b id="score">0</b></div>
+      <div>等级 <b id="level">1</b></div>
+      <div>消除 <b id="lines">0</b></div>
+    </div>
+    <div class="wrap">
+      <canvas id="board" width="240" height="480"></canvas>
+      <div class="side">
+        <div>下一块</div>
+        <canvas id="next" width="80" height="80"></canvas>
+      </div>
+    </div>
+    <div class="hint">← → 移动 · ↓ 软降 · ↑ 旋转 · 空格硬降</div>
+    <div class="touchpad">
+      <button data-act="left">←</button>
+      <button data-act="rot">⟳</button>
+      <button data-act="right">→</button>
+      <button data-act="down">↓</button>
+      <button data-act="drop">⤓</button>
+    </div>
+
+    <div id="overlay">
+      <div class="title">Game Over</div>
+      <div>最终分数：<span id="finalScore">0</span></div>
+      <button id="restart">重新开始</button>
+    </div>
+
+    <script>
+      const SLUG = "tetris";
+      const COLS = 10, ROWS = 20;
+      const board = document.getElementById("board");
+      const ctx = board.getContext("2d");
+      const next = document.getElementById("next");
+      const nctx = next.getContext("2d");
+      const CELL = board.width / COLS;
+
+      const overlay = document.getElementById("overlay");
+      const scoreEl = document.getElementById("score");
+      const levelEl = document.getElementById("level");
+      const linesEl = document.getElementById("lines");
+      const finalScoreEl = document.getElementById("finalScore");
+      const restartBtn = document.getElementById("restart");
+
+      const COLORS = ["#22d3ee","#facc15","#a78bfa","#fb923c","#60a5fa","#34d399","#f87171"];
+      const SHAPES = [
+        [[1,1,1,1]],                   // I
+        [[1,1],[1,1]],                 // O
+        [[0,1,0],[1,1,1]],             // T
+        [[0,0,1],[1,1,1]],             // L
+        [[1,0,0],[1,1,1]],             // J
+        [[0,1,1],[1,1,0]],             // S
+        [[1,1,0],[0,1,1]],             // Z
+      ];
+
+      let grid, piece, nextPiece, score, level, lines, dropTimer, dropInterval, alive, startTime;
+
+      function newPiece() {
+        const i = Math.floor(Math.random() * SHAPES.length);
+        const shape = SHAPES[i].map(r => r.slice());
+        return { shape, color: COLORS[i], x: Math.floor((COLS - shape[0].length) / 2), y: 0 };
+      }
+
+      function reset() {
+        grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+        piece = newPiece();
+        nextPiece = newPiece();
+        score = 0; level = 1; lines = 0;
+        dropInterval = 800;
+        alive = true;
+        startTime = Date.now();
+        updateHUD();
+        overlay.classList.remove("show");
+        try { parent.postMessage({ type: "game_start", payload: { slug: SLUG } }, "*"); } catch (_) {}
+      }
+
+      function updateHUD() {
+        scoreEl.textContent = score;
+        levelEl.textContent = level;
+        linesEl.textContent = lines;
+      }
+
+      function collide(p, dx = 0, dy = 0, shape = p.shape) {
+        for (let y = 0; y < shape.length; y++) {
+          for (let x = 0; x < shape[y].length; x++) {
+            if (!shape[y][x]) continue;
+            const nx = p.x + x + dx;
+            const ny = p.y + y + dy;
+            if (nx < 0 || nx >= COLS || ny >= ROWS) return true;
+            if (ny >= 0 && grid[ny][nx]) return true;
+          }
+        }
+        return false;
+      }
+
+      function merge() {
+        piece.shape.forEach((row, y) => row.forEach((v, x) => {
+          if (v && piece.y + y >= 0) grid[piece.y + y][piece.x + x] = piece.color;
+        }));
+      }
+
+      function rotate() {
+        const w = piece.shape[0].length, h = piece.shape.length;
+        const next = Array.from({ length: w }, () => Array(h).fill(0));
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) next[x][h - 1 - y] = piece.shape[y][x];
+        if (!collide(piece, 0, 0, next)) piece.shape = next;
+        else if (!collide(piece, -1, 0, next)) { piece.x -= 1; piece.shape = next; }
+        else if (!collide(piece, 1, 0, next)) { piece.x += 1; piece.shape = next; }
+      }
+
+      function clearLines() {
+        let cleared = 0;
+        for (let y = ROWS - 1; y >= 0; y--) {
+          if (grid[y].every(c => c)) {
+            grid.splice(y, 1);
+            grid.unshift(Array(COLS).fill(0));
+            cleared++;
+            y++;
+          }
+        }
+        if (cleared) {
+          const bonus = [0, 100, 300, 500, 800][cleared] || 800;
+          score += bonus * level;
+          lines += cleared;
+          const newLevel = 1 + Math.floor(lines / 10);
+          if (newLevel > level) {
+            level = newLevel;
+            dropInterval = Math.max(80, 800 - (level - 1) * 70);
+          }
+          updateHUD();
+        }
+      }
+
+      function spawn() {
+        piece = nextPiece;
+        nextPiece = newPiece();
+        if (collide(piece)) gameOver();
+      }
+
+      function softDrop() {
+        if (!alive) return;
+        if (!collide(piece, 0, 1)) { piece.y += 1; }
+        else {
+          merge();
+          clearLines();
+          spawn();
+        }
+      }
+
+      function hardDrop() {
+        if (!alive) return;
+        let d = 0;
+        while (!collide(piece, 0, d + 1)) d++;
+        piece.y += d;
+        score += d * 2;
+        merge();
+        clearLines();
+        spawn();
+        updateHUD();
+      }
+
+      function gameOver() {
+        alive = false;
+        clearInterval(dropTimer);
+        finalScoreEl.textContent = score;
+        overlay.classList.add("show");
+        try {
+          parent.postMessage({
+            type: "game_end",
+            payload: { slug: SLUG, score, duration: Math.floor((Date.now() - startTime) / 1000) },
+          }, "*");
+        } catch (_) {}
+      }
+
+      function draw() {
+        ctx.fillStyle = "#1a1f2a";
+        ctx.fillRect(0, 0, board.width, board.height);
+        // grid cells
+        for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
+          if (grid[y][x]) drawCell(ctx, x, y, grid[y][x]);
+        }
+        // piece
+        if (piece) piece.shape.forEach((row, y) => row.forEach((v, x) => {
+          if (v) drawCell(ctx, piece.x + x, piece.y + y, piece.color);
+        }));
+        // next
+        nctx.fillStyle = "#1a1f2a";
+        nctx.fillRect(0, 0, next.width, next.height);
+        if (nextPiece) {
+          const s = 18;
+          const offX = (next.width - nextPiece.shape[0].length * s) / 2;
+          const offY = (next.height - nextPiece.shape.length * s) / 2;
+          nextPiece.shape.forEach((row, y) => row.forEach((v, x) => {
+            if (v) {
+              nctx.fillStyle = nextPiece.color;
+              nctx.fillRect(offX + x * s + 1, offY + y * s + 1, s - 2, s - 2);
+            }
+          }));
+        }
+      }
+
+      function drawCell(c, x, y, color) {
+        c.fillStyle = color;
+        c.fillRect(x * CELL + 1, y * CELL + 1, CELL - 2, CELL - 2);
+        c.strokeStyle = "rgba(255,255,255,0.15)";
+        c.lineWidth = 1;
+        c.strokeRect(x * CELL + 1, y * CELL + 1, CELL - 2, CELL - 2);
+      }
+
+      function startLoop() {
+        clearInterval(dropTimer);
+        dropTimer = setInterval(() => {
+          if (alive) softDrop();
+          draw();
+        }, 16);
+        let acc = 0;
+        let last = performance.now();
+        function tick(t) {
+          acc += t - last;
+          last = t;
+          if (acc >= dropInterval) {
+            if (alive) softDrop();
+            acc = 0;
+          }
+          draw();
+          requestAnimationFrame(tick);
+        }
+        clearInterval(dropTimer);
+        dropTimer = null;
+        requestAnimationFrame(tick);
+      }
+
+      document.addEventListener("keydown", (e) => {
+        if (!alive) return;
+        if (e.key === "ArrowLeft" || e.key === "a") { if (!collide(piece, -1, 0)) piece.x -= 1; }
+        else if (e.key === "ArrowRight" || e.key === "d") { if (!collide(piece, 1, 0)) piece.x += 1; }
+        else if (e.key === "ArrowDown" || e.key === "s") { softDrop(); }
+        else if (e.key === "ArrowUp" || e.key === "w") { rotate(); }
+        else if (e.key === " ") { e.preventDefault(); hardDrop(); }
+      });
+
+      document.querySelectorAll(".touchpad button").forEach((b) => {
+        b.addEventListener("click", () => {
+          if (!alive) return;
+          const a = b.dataset.act;
+          if (a === "left" && !collide(piece, -1, 0)) piece.x -= 1;
+          else if (a === "right" && !collide(piece, 1, 0)) piece.x += 1;
+          else if (a === "down") softDrop();
+          else if (a === "rot") rotate();
+          else if (a === "drop") hardDrop();
+        });
+      });
+
+      restartBtn.addEventListener("click", reset);
+      reset();
+      startLoop();
+    </script>
+  </body>
+</html>

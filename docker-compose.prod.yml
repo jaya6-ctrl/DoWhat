@@ -1,0 +1,62 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: dowhat-app:latest
+    container_name: dowhat-app
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    ports:
+      - "3000:3000"
+    volumes:
+      - dowhat_avatars:/app/public/avatars
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: dowhat-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dowhat}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dowhat}
+      POSTGRES_DB: ${POSTGRES_DB:-dowhat}
+    volumes:
+      - dowhat_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dowhat} -d ${POSTGRES_DB:-dowhat}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: dowhat-redis
+    restart: unless-stopped
+    volumes:
+      - dowhat_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: dowhat-mailpit
+    restart: unless-stopped
+    ports:
+      # Web UI 仅绑本机 loopback，外网看不到。通过 SSH 端口转发查看。
+      - "127.0.0.1:8025:8025"
+
+volumes:
+  dowhat_pg_data:
+  dowhat_redis_data:
+  dowhat_avatars:

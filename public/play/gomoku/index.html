@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>五子棋</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; height: 100%; background: #0e1116; color: #e8eaed; font-family: system-ui, sans-serif; }
+      body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
+      h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: 1px; color: #9ca3af; }
+      .stats { display: flex; gap: 18px; font-size: 14px; align-items: center; }
+      .stats b { color: #f59e0b; font-size: 18px; }
+      canvas { background: #e9c787; border-radius: 8px; touch-action: none; max-width: 92vw; max-height: 75vh; cursor: pointer; }
+      .controls { display: flex; gap: 8px; }
+      button { background: #2a2f3a; color: #e8eaed; border: 1px solid #3a3f4a; padding: 6px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; }
+      button:hover { background: #3a3f4a; }
+      button.primary { background: #f59e0b; color: #111; border-color: #f59e0b; }
+      button.primary:hover { background: #fbbf24; }
+      .hint { font-size: 11px; color: #6b7280; max-width: 360px; text-align: center; }
+      #overlay { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; gap: 16px; background: rgba(0,0,0,0.75); }
+      #overlay.show { display: flex; }
+      #overlay .title { font-size: 28px; font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <h1>GOMOKU · 五子棋</h1>
+    <div class="stats">
+      <div id="turn">你的回合（黑）</div>
+      <div>步数 <b id="moves">0</b></div>
+    </div>
+    <canvas id="cv" width="450" height="450"></canvas>
+    <div class="controls">
+      <button id="undo">悔棋</button>
+      <button id="reset" class="primary">重新开始</button>
+    </div>
+    <div class="hint">你执黑先手，AI 执白。横/竖/斜任一方向连成 5 子获胜</div>
+
+    <div id="overlay">
+      <div class="title" id="overTitle">游戏结束</div>
+      <button id="restart" class="primary">再来一局</button>
+    </div>
+
+    <script>
+      const SLUG = "gomoku";
+      const SIZE = 15;
+      const cv = document.getElementById("cv");
+      const ctx = cv.getContext("2d");
+      const turnEl = document.getElementById("turn");
+      const movesEl = document.getElementById("moves");
+      const overlay = document.getElementById("overlay");
+      const overTitle = document.getElementById("overTitle");
+
+      const PAD = 20;
+      const STEP = (cv.width - PAD * 2) / (SIZE - 1);
+      const EMPTY = 0, BLACK = 1, WHITE = 2;
+
+      let board, history, turn, alive, startTime, hover;
+
+      function reset() {
+        board = Array.from({ length: SIZE }, () => Array(SIZE).fill(EMPTY));
+        history = [];
+        turn = BLACK;
+        alive = true;
+        hover = null;
+        startTime = Date.now();
+        movesEl.textContent = 0;
+        turnEl.textContent = "你的回合（黑）";
+        overlay.classList.remove("show");
+        draw();
+        try { parent.postMessage({ type: "game_start", payload: { slug: SLUG } }, "*"); } catch (_) {}
+      }
+
+      function draw() {
+        ctx.fillStyle = "#e9c787";
+        ctx.fillRect(0, 0, cv.width, cv.height);
+        ctx.strokeStyle = "#5b3a1a";
+        ctx.lineWidth = 1;
+        for (let i = 0; i < SIZE; i++) {
+          ctx.beginPath();
+          ctx.moveTo(PAD, PAD + i * STEP);
+          ctx.lineTo(cv.width - PAD, PAD + i * STEP);
+          ctx.moveTo(PAD + i * STEP, PAD);
+          ctx.lineTo(PAD + i * STEP, cv.height - PAD);
+          ctx.stroke();
+        }
+        // star points
+        ctx.fillStyle = "#5b3a1a";
+        for (const [x, y] of [[3,3],[11,3],[3,11],[11,11],[7,7]]) {
+          ctx.beginPath();
+          ctx.arc(PAD + x * STEP, PAD + y * STEP, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        // pieces
+        for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) {
+          if (board[y][x]) drawPiece(x, y, board[y][x]);
+        }
+        // last move marker
+        if (history.length) {
+          const last = history[history.length - 1];
+          ctx.strokeStyle = "#ef4444";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(PAD + last.x * STEP - 6, PAD + last.y * STEP - 6, 12, 12);
+        }
+        // hover
+        if (alive && hover && turn === BLACK && board[hover.y][hover.x] === EMPTY) {
+          ctx.globalAlpha = 0.4;
+          drawPiece(hover.x, hover.y, BLACK);
+          ctx.globalAlpha = 1;
+        }
+      }
+
+      function drawPiece(x, y, c) {
+        const cx = PAD + x * STEP, cy = PAD + y * STEP;
+        const r = STEP * 0.42;
+        const grad = ctx.createRadialGradient(cx - r/3, cy - r/3, 1, cx, cy, r);
+        if (c === BLACK) { grad.addColorStop(0, "#555"); grad.addColorStop(1, "#000"); }
+        else { grad.addColorStop(0, "#fff"); grad.addColorStop(1, "#bbb"); }
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      function place(x, y, c) {
+        board[y][x] = c;
+        history.push({ x, y, c });
+        movesEl.textContent = history.length;
+      }
+
+      function checkWin(x, y, c) {
+        const dirs = [[1,0],[0,1],[1,1],[1,-1]];
+        for (const [dx, dy] of dirs) {
+          let count = 1;
+          for (let k = 1; k < 5; k++) {
+            const nx = x + dx * k, ny = y + dy * k;
+            if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE || board[ny][nx] !== c) break;
+            count++;
+          }
+          for (let k = 1; k < 5; k++) {
+            const nx = x - dx * k, ny = y - dy * k;
+            if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE || board[ny][nx] !== c) break;
+            count++;
+          }
+          if (count >= 5) return true;
+        }
+        return false;
+      }
+
+      function endGame(winner) {
+        alive = false;
+        const msg = winner === BLACK ? "你赢了！" : winner === WHITE ? "AI 获胜" : "平局";
+        overTitle.textContent = msg;
+        overlay.classList.add("show");
+        const score = winner === BLACK ? 1000 : winner === WHITE ? 0 : 500;
+        try {
+          parent.postMessage({
+            type: "game_end",
+            payload: { slug: SLUG, score, duration: Math.floor((Date.now() - startTime) / 1000) },
+          }, "*");
+        } catch (_) {}
+      }
+
+      // ---- AI ----
+      // Scoring: enumerate every empty cell, count threats it creates/blocks
+      const SCORES = {
+        5: 1000000,
+        live4: 50000,
+        rush4: 10000,
+        live3: 5000,
+        sleep3: 500,
+        live2: 100,
+        sleep2: 10,
+      };
+
+      function evalLine(line, c) {
+        // line is array of cell values, with the candidate as c
+        let total = 0;
+        const s = line.join("");
+        const me = String(c);
+        const op = c === BLACK ? "2" : "1";
+        const patterns = [
+          [me.repeat(5), SCORES[5]],
+          ["0" + me.repeat(4) + "0", SCORES.live4],
+          [me.repeat(4) + "0", SCORES.rush4],
+          ["0" + me.repeat(4), SCORES.rush4],
+          [op + me.repeat(4) + "0", SCORES.rush4],
+          ["0" + me.repeat(4) + op, SCORES.rush4],
+          ["0" + me.repeat(3) + "0", SCORES.live3],
+          ["0" + me + "0" + me.repeat(2) + "0", SCORES.live3],
+          ["0" + me.repeat(2) + "0" + me + "0", SCORES.live3],
+          [op + me.repeat(3) + "0", SCORES.sleep3],
+          ["0" + me.repeat(3) + op, SCORES.sleep3],
+          ["0" + me.repeat(2) + "0", SCORES.live2],
+          [op + me.repeat(2) + "0", SCORES.sleep2],
+          ["0" + me.repeat(2) + op, SCORES.sleep2],
+        ];
+        for (const [pat, val] of patterns) {
+          let idx = 0;
+          while ((idx = s.indexOf(pat, idx)) !== -1) {
+            total += val;
+            idx += 1;
+          }
+        }
+        return total;
+      }
+
+      function scoreCell(x, y, c) {
+        // four directions through (x,y), build line of length 9 centered at (x,y)
+        const dirs = [[1,0],[0,1],[1,1],[1,-1]];
+        let total = 0;
+        for (const [dx, dy] of dirs) {
+          const line = [];
+          for (let k = -4; k <= 4; k++) {
+            const nx = x + dx * k, ny = y + dy * k;
+            if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE) line.push(3); // wall
+            else if (k === 0) line.push(c);
+            else line.push(board[ny][nx]);
+          }
+          total += evalLine(line, c);
+        }
+        return total;
+      }
+
+      function aiMove() {
+        // candidate cells: empty cells adjacent (within 2) to any existing piece
+        const cand = new Set();
+        for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) {
+          if (board[y][x] === EMPTY) continue;
+          for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+            const nx = x + dx, ny = y + dy;
+            if (nx >= 0 && ny >= 0 && nx < SIZE && ny < SIZE && board[ny][nx] === EMPTY) {
+              cand.add(ny * SIZE + nx);
+            }
+          }
+        }
+        if (cand.size === 0) cand.add(Math.floor(SIZE/2) * SIZE + Math.floor(SIZE/2));
+
+        let best = -1, bestScore = -Infinity;
+        for (const key of cand) {
+          const x = key % SIZE, y = Math.floor(key / SIZE);
+          // AI gain (white) + 0.9 * defense against player (black)
+          const own = scoreCell(x, y, WHITE);
+          const opp = scoreCell(x, y, BLACK);
+          const total = own + opp * 0.9 + Math.random() * 5;
+          if (total > bestScore) { bestScore = total; best = key; }
+        }
+        return { x: best % SIZE, y: Math.floor(best / SIZE) };
+      }
+
+      function aiTurn() {
+        if (!alive) return;
+        turnEl.textContent = "AI 思考中…";
+        setTimeout(() => {
+          const mv = aiMove();
+          place(mv.x, mv.y, WHITE);
+          draw();
+          if (checkWin(mv.x, mv.y, WHITE)) { endGame(WHITE); return; }
+          if (history.length >= SIZE * SIZE) { endGame(0); return; }
+          turn = BLACK;
+          turnEl.textContent = "你的回合（黑）";
+        }, 280);
+      }
+
+      // ---- input ----
+      function pickCell(evt) {
+        const rect = cv.getBoundingClientRect();
+        const scale = cv.width / rect.width;
+        const x = (evt.clientX - rect.left) * scale;
+        const y = (evt.clientY - rect.top) * scale;
+        const gx = Math.round((x - PAD) / STEP);
+        const gy = Math.round((y - PAD) / STEP);
+        if (gx < 0 || gy < 0 || gx >= SIZE || gy >= SIZE) return null;
+        return { x: gx, y: gy };
+      }
+
+      cv.addEventListener("pointermove", (e) => {
+        const c = pickCell(e);
+        if (c && (!hover || hover.x !== c.x || hover.y !== c.y)) {
+          hover = c;
+          draw();
+        }
+      });
+      cv.addEventListener("pointerleave", () => { hover = null; draw(); });
+      cv.addEventListener("pointerdown", (e) => {
+        if (!alive || turn !== BLACK) return;
+        const c = pickCell(e);
+        if (!c || board[c.y][c.x] !== EMPTY) return;
+        place(c.x, c.y, BLACK);
+        draw();
+        if (checkWin(c.x, c.y, BLACK)) { endGame(BLACK); return; }
+        if (history.length >= SIZE * SIZE) { endGame(0); return; }
+        turn = WHITE;
+        aiTurn();
+      });
+
+      document.getElementById("undo").addEventListener("click", () => {
+        if (!history.length) return;
+        // undo AI move + player move
+        if (history.length >= 2 && history[history.length - 1].c === WHITE) {
+          const a = history.pop(); board[a.y][a.x] = EMPTY;
+          const b = history.pop(); board[b.y][b.x] = EMPTY;
+        } else {
+          const a = history.pop(); board[a.y][a.x] = EMPTY;
+        }
+        alive = true;
+        turn = BLACK;
+        turnEl.textContent = "你的回合（黑）";
+        movesEl.textContent = history.length;
+        overlay.classList.remove("show");
+        draw();
+      });
+      document.getElementById("reset").addEventListener("click", reset);
+      document.getElementById("restart").addEventListener("click", reset);
+
+      reset();
+    </script>
+  </body>
+</html>

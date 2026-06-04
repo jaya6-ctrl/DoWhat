@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>打砖块</title>
+    <style>
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; height: 100%; background: #0b1020; color: #e6edf3; font-family: system-ui, sans-serif; overflow: hidden; }
+      body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
+      .hud { display: flex; gap: 24px; font-size: 14px; letter-spacing: 1px; }
+      canvas { background: #060914; border-radius: 8px; max-width: 95vw; max-height: 70vh; touch-action: none; }
+      .hint { font-size: 12px; color: #6b7280; }
+      button { background: #ff6a00; color: #fff; border: 0; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+      #overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); display: none; align-items: center; justify-content: center; flex-direction: column; gap: 12px; }
+      #overlay.show { display: flex; }
+      #overlay .title { font-size: 32px; font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <div class="hud">
+      <div>分数：<span id="score">0</span></div>
+      <div>生命：<span id="lives">3</span></div>
+      <div>关卡：<span id="level">1</span></div>
+    </div>
+    <canvas id="game" width="480" height="360"></canvas>
+    <div class="hint">← → / A D / 鼠标 / 触摸控制挡板，空格发射</div>
+
+    <div id="overlay">
+      <div class="title" id="overTitle">Game Over</div>
+      <div>最终分数：<span id="finalScore">0</span></div>
+      <button id="restart">重新开始</button>
+    </div>
+
+    <script>
+      const canvas = document.getElementById("game");
+      const ctx = canvas.getContext("2d");
+      const scoreEl = document.getElementById("score");
+      const livesEl = document.getElementById("lives");
+      const levelEl = document.getElementById("level");
+      const overlay = document.getElementById("overlay");
+      const overTitle = document.getElementById("overTitle");
+      const finalScoreEl = document.getElementById("finalScore");
+
+      const W = canvas.width, H = canvas.height;
+      const PADDLE_W = 80, PADDLE_H = 10;
+      const BALL_R = 6;
+      const ROWS = 5, COLS = 10, BRICK_H = 16, BRICK_PADDING = 4, BRICK_TOP = 40;
+      const COLORS = ["#ef4444", "#f97316", "#facc15", "#34d399", "#38bdf8"];
+
+      let paddleX, ball, bricks, score, lives, level, running, launched, startTime;
+
+      function reset(full = true) {
+        paddleX = (W - PADDLE_W) / 2;
+        if (full) { score = 0; lives = 3; level = 1; startTime = Date.now(); try { parent.postMessage({ type: "game_start", payload: { slug: "breakout" } }, "*"); } catch (_) {} }
+        buildBricks();
+        resetBall();
+        running = true;
+        overlay.classList.remove("show");
+        scoreEl.textContent = score; livesEl.textContent = lives; levelEl.textContent = level;
+        loop();
+      }
+
+      function resetBall() {
+        launched = false;
+        ball = { x: paddleX + PADDLE_W / 2, y: H - PADDLE_H - 20, vx: 0, vy: 0 };
+      }
+
+      function buildBricks() {
+        const w = (W - (COLS + 1) * BRICK_PADDING) / COLS;
+        bricks = [];
+        for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+          bricks.push({ x: BRICK_PADDING + c * (w + BRICK_PADDING), y: BRICK_TOP + r * (BRICK_H + BRICK_PADDING), w, h: BRICK_H, color: COLORS[r % COLORS.length], alive: true });
+        }
+      }
+
+      function launch() {
+        if (launched || !running) return;
+        const speed = 4 + level * 0.4;
+        ball.vx = speed * (Math.random() > 0.5 ? 1 : -1) * 0.7;
+        ball.vy = -speed;
+        launched = true;
+      }
+
+      function loop() {
+        if (!running) return;
+        update();
+        draw();
+        requestAnimationFrame(loop);
+      }
+
+      function update() {
+        if (!launched) { ball.x = paddleX + PADDLE_W / 2; return; }
+        ball.x += ball.vx; ball.y += ball.vy;
+        if (ball.x < BALL_R) { ball.x = BALL_R; ball.vx *= -1; }
+        if (ball.x > W - BALL_R) { ball.x = W - BALL_R; ball.vx *= -1; }
+        if (ball.y < BALL_R) { ball.y = BALL_R; ball.vy *= -1; }
+        // paddle
+        if (ball.y + BALL_R >= H - PADDLE_H - 10 && ball.x > paddleX && ball.x < paddleX + PADDLE_W && ball.vy > 0) {
+          const offset = (ball.x - (paddleX + PADDLE_W / 2)) / (PADDLE_W / 2);
+          const speed = Math.hypot(ball.vx, ball.vy);
+          const angle = offset * (Math.PI / 3);
+          ball.vx = speed * Math.sin(angle);
+          ball.vy = -speed * Math.cos(angle);
+        }
+        if (ball.y > H + 20) {
+          lives--; livesEl.textContent = lives;
+          if (lives <= 0) return endGame(false);
+          resetBall();
+        }
+        for (const b of bricks) {
+          if (!b.alive) continue;
+          if (ball.x + BALL_R > b.x && ball.x - BALL_R < b.x + b.w && ball.y + BALL_R > b.y && ball.y - BALL_R < b.y + b.h) {
+            b.alive = false; score += 10; scoreEl.textContent = score;
+            const dx = Math.min(ball.x - b.x, b.x + b.w - ball.x);
+            const dy = Math.min(ball.y - b.y, b.y + b.h - ball.y);
+            if (dx < dy) ball.vx *= -1; else ball.vy *= -1;
+            break;
+          }
+        }
+        if (bricks.every((b) => !b.alive)) {
+          level++; levelEl.textContent = level;
+          reset(false);
+        }
+      }
+
+      function draw() {
+        ctx.fillStyle = "#060914"; ctx.fillRect(0, 0, W, H);
+        // bricks
+        for (const b of bricks) { if (!b.alive) continue; ctx.fillStyle = b.color; ctx.fillRect(b.x, b.y, b.w, b.h); }
+        // paddle
+        ctx.fillStyle = "#e6edf3"; ctx.fillRect(paddleX, H - PADDLE_H - 10, PADDLE_W, PADDLE_H);
+        // ball
+        ctx.fillStyle = "#ff6a00"; ctx.beginPath(); ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI * 2); ctx.fill();
+        if (!launched) { ctx.fillStyle = "#9ca3af"; ctx.font = "14px system-ui"; ctx.textAlign = "center"; ctx.fillText("点击 / 空格 发射", W / 2, H / 2); }
+      }
+
+      function endGame(win) {
+        running = false;
+        overTitle.textContent = win ? "🎉 你赢了！" : "Game Over";
+        finalScoreEl.textContent = score;
+        overlay.classList.add("show");
+        try {
+          parent.postMessage({
+            type: "game_end",
+            payload: { slug: "breakout", score, duration: Math.round((Date.now() - startTime) / 1000) },
+          }, "*");
+        } catch (_) {}
+      }
+
+      // input
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") { paddleX = Math.max(0, paddleX - 30); e.preventDefault(); }
+        if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") { paddleX = Math.min(W - PADDLE_W, paddleX + 30); e.preventDefault(); }
+        if (e.key === " ") { launch(); e.preventDefault(); }
+      });
+      canvas.addEventListener("mousemove", (e) => { const r = canvas.getBoundingClientRect(); paddleX = Math.max(0, Math.min(W - PADDLE_W, ((e.clientX - r.left) / r.width) * W - PADDLE_W / 2)); });
+      canvas.addEventListener("click", launch);
+      canvas.addEventListener("touchmove", (e) => { const t = e.touches[0]; const r = canvas.getBoundingClientRect(); paddleX = Math.max(0, Math.min(W - PADDLE_W, ((t.clientX - r.left) / r.width) * W - PADDLE_W / 2)); }, { passive: true });
+      canvas.addEventListener("touchstart", launch);
+
+      document.getElementById("restart").addEventListener("click", () => reset(true));
+      reset(true);
+    </script>
+  </body>
+</html>

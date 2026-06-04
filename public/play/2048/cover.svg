@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" width="400" height="300">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fef3c7"/>
+      <stop offset="1" stop-color="#fde68a"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="300" fill="url(#g)"/>
+  <g transform="translate(120 35)" font-family="system-ui,-apple-system,sans-serif" font-weight="700" text-anchor="middle">
+    <rect width="160" height="160" rx="8" fill="#bbada0"/>
+    <rect x="8"  y="8"  width="32" height="32" rx="4" fill="#eee4da"/><text x="24" y="30" font-size="16" fill="#776e65">2</text>
+    <rect x="44" y="8"  width="32" height="32" rx="4" fill="#ede0c8"/><text x="60" y="30" font-size="16" fill="#776e65">4</text>
+    <rect x="80" y="8"  width="32" height="32" rx="4" fill="#f2b179"/><text x="96" y="30" font-size="16" fill="#fff">8</text>
+    <rect x="116" y="8" width="32" height="32" rx="4" fill="#f59563"/><text x="132" y="30" font-size="14" fill="#fff">16</text>
+    <rect x="8"  y="44" width="32" height="32" rx="4" fill="#f67c5f"/><text x="24" y="66" font-size="14" fill="#fff">32</text>
+    <rect x="44" y="44" width="32" height="32" rx="4" fill="#f65e3b"/><text x="60" y="66" font-size="14" fill="#fff">64</text>
+    <rect x="80" y="44" width="32" height="32" rx="4" fill="#edcf72"/><text x="96" y="65" font-size="11" fill="#fff">128</text>
+    <rect x="116" y="44" width="32" height="32" rx="4" fill="#edcc61"/><text x="132" y="65" font-size="11" fill="#fff">256</text>
+    <rect x="8"  y="80" width="32" height="32" rx="4" fill="#edc850"/><text x="24" y="100" font-size="11" fill="#fff">512</text>
+    <rect x="44" y="80" width="32" height="32" rx="4" fill="#edc53f"/><text x="60" y="100" font-size="9" fill="#fff">1024</text>
+    <rect x="80" y="80" width="68" height="32" rx="4" fill="#edc22e"/><text x="114" y="103" font-size="18" fill="#fff">2048</text>
+    <rect x="8" y="116" width="140" height="36" rx="4" fill="rgba(0,0,0,.05)"/>
+  </g>
+  <text x="200" y="230" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="32" font-weight="800" fill="#776e65">2048</text>
+  <text x="200" y="265" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="12" fill="#a39288">合并数字到 2048</text>
+</svg>

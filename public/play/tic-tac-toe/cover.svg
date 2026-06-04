@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" width="400" height="300">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1e293b"/>
+      <stop offset="1" stop-color="#0f172a"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="300" fill="url(#g)"/>
+  <g transform="translate(110 30)">
+    <g stroke="#475569" stroke-width="3" stroke-linecap="round">
+      <line x1="60" y1="0" x2="60" y2="180"/>
+      <line x1="120" y1="0" x2="120" y2="180"/>
+      <line x1="0" y1="60" x2="180" y2="60"/>
+      <line x1="0" y1="120" x2="180" y2="120"/>
+    </g>
+    <g font-family="system-ui,-apple-system,sans-serif" font-weight="700" text-anchor="middle">
+      <text x="30" y="48" font-size="40" fill="#38bdf8">X</text>
+      <text x="90" y="48" font-size="40" fill="#fb923c">O</text>
+      <text x="90" y="108" font-size="40" fill="#38bdf8">X</text>
+      <text x="30" y="168" font-size="40" fill="#fb923c">O</text>
+      <text x="150" y="168" font-size="40" fill="#38bdf8">X</text>
+    </g>
+    <line x1="10" y1="160" x2="170" y2="20" stroke="#38bdf8" stroke-width="4" stroke-linecap="round" opacity=".6"/>
+  </g>
+  <text x="200" y="245" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="26" font-weight="700" fill="#fff">井字棋</text>
+  <text x="200" y="270" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="12" fill="rgba(255,255,255,.6)">Tic-Tac-Toe · 智斗 AI</text>
+</svg>

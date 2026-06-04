@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>翻牌记忆</title>
+    <style>
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; height: 100%; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; font-family: system-ui, sans-serif; }
+      body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 12px; }
+      h1 { margin: 0; font-size: 22px; letter-spacing: 2px; }
+      .stats { display: flex; gap: 16px; font-size: 14px; opacity: 0.9; }
+      #board { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; max-width: 95vw; }
+      .card { width: 70px; height: 70px; perspective: 600px; cursor: pointer; }
+      .inner { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; transition: transform 0.4s; }
+      .card.flipped .inner, .card.matched .inner { transform: rotateY(180deg); }
+      .face { position: absolute; inset: 0; backface-visibility: hidden; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 36px; user-select: none; }
+      .front { background: #4f46e5; }
+      .front::before { content: "?"; font-size: 28px; color: #c7d2fe; font-weight: 700; }
+      .back { background: #fff; color: #4f46e5; transform: rotateY(180deg); }
+      .card.matched .back { background: #34d399; color: #fff; }
+      button { background: #fff; color: #4f46e5; border: 0; padding: 8px 16px; border-radius: 6px; font-weight: 700; cursor: pointer; }
+      #overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; flex-direction: column; gap: 16px; color: #fff; }
+      #overlay.show { display: flex; }
+      #overlay .title { font-size: 36px; font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <h1>MEMORY · 翻牌记忆</h1>
+    <div class="stats">
+      <div>步数：<span id="moves">0</span></div>
+      <div>已配对：<span id="pairs">0</span> / 8</div>
+      <div>用时：<span id="time">0</span>s</div>
+    </div>
+    <div id="board"></div>
+    <button id="reset">重新开始</button>
+
+    <div id="overlay">
+      <div class="title">🎉 全部配对完成！</div>
+      <div><span id="finalMoves">0</span> 步 · <span id="finalTime">0</span> 秒</div>
+      <button id="again">再来一局</button>
+    </div>
+
+    <script>
+      const EMOJIS = ["🍎","🍌","🍇","🍓","🍒","🍉","🍍","🥝"];
+      const boardEl = document.getElementById("board");
+      const movesEl = document.getElementById("moves");
+      const pairsEl = document.getElementById("pairs");
+      const timeEl = document.getElementById("time");
+      const overlay = document.getElementById("overlay");
+      const finalMovesEl = document.getElementById("finalMoves");
+      const finalTimeEl = document.getElementById("finalTime");
+
+      let deck, flipped, moves, matched, startTime, timer, lock;
+
+      function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+
+      function reset() {
+        deck = shuffle([...EMOJIS, ...EMOJIS]);
+        flipped = []; moves = 0; matched = 0; lock = false;
+        movesEl.textContent = 0; pairsEl.textContent = 0; timeEl.textContent = 0;
+        overlay.classList.remove("show");
+        startTime = Date.now();
+        try { parent.postMessage({ type: "game_start", payload: { slug: "memory" } }, "*"); } catch (_) {}
+        clearInterval(timer);
+        timer = setInterval(() => { timeEl.textContent = Math.floor((Date.now() - startTime) / 1000); }, 250);
+        render();
+      }
+
+      function render() {
+        boardEl.innerHTML = "";
+        deck.forEach((emoji, i) => {
+          const card = document.createElement("div");
+          card.className = "card";
+          card.innerHTML = `<div class="inner"><div class="face front"></div><div class="face back">${emoji}</div></div>`;
+          card.addEventListener("click", () => onFlip(i, card));
+          boardEl.appendChild(card);
+        });
+      }
+
+      function onFlip(i, card) {
+        if (lock || card.classList.contains("flipped") || card.classList.contains("matched")) return;
+        card.classList.add("flipped");
+        flipped.push({ i, emoji: deck[i], card });
+        if (flipped.length === 2) {
+          moves++; movesEl.textContent = moves;
+          lock = true;
+          const [a, b] = flipped;
+          if (a.emoji === b.emoji) {
+            setTimeout(() => {
+              a.card.classList.add("matched"); b.card.classList.add("matched");
+              flipped = []; lock = false; matched++; pairsEl.textContent = matched;
+              if (matched === EMOJIS.length) finish();
+            }, 300);
+          } else {
+            setTimeout(() => {
+              a.card.classList.remove("flipped"); b.card.classList.remove("flipped");
+              flipped = []; lock = false;
+            }, 700);
+          }
+        }
+      }
+
+      function finish() {
+        clearInterval(timer);
+        const dur = Math.floor((Date.now() - startTime) / 1000);
+        finalMovesEl.textContent = moves;
+        finalTimeEl.textContent = dur;
+        overlay.classList.add("show");
+        const score = Math.max(0, 1000 - moves * 20 - dur * 5);
+        try {
+          parent.postMessage({
+            type: "game_end",
+            payload: { slug: "memory", score, duration: dur },
+          }, "*");
+        } catch (_) {}
+      }
+
+      document.getElementById("reset").addEventListener("click", reset);
+      document.getElementById("again").addEventListener("click", reset);
+      reset();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>飞翔小鸟</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; height: 100%; background: #0e1116; color: #e8eaed; font-family: system-ui, sans-serif; }
+      body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
+      h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: 1px; color: #9ca3af; }
+      .stats { display: flex; gap: 18px; font-size: 14px; }
+      .stats b { color: #f59e0b; font-size: 18px; }
+      canvas { background: #87ceeb; border-radius: 8px; touch-action: none; max-width: 92vw; max-height: 75vh; cursor: pointer; }
+      .hint { font-size: 11px; color: #6b7280; max-width: 360px; text-align: center; }
+      button { background: #f59e0b; color: #111; border: 0; padding: 10px 20px; border-radius: 6px; font-size: 14px; cursor: pointer; font-weight: 600; }
+      button:hover { background: #fbbf24; }
+      #overlay { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; gap: 16px; background: rgba(0,0,0,0.75); }
+      #overlay.show { display: flex; }
+      #overlay .title { font-size: 28px; font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <h1>FLAPPY · 飞翔小鸟</h1>
+    <div class="stats">
+      <div>分数 <b id="score">0</b></div>
+      <div>最高 <b id="best">0</b></div>
+    </div>
+    <canvas id="cv" width="360" height="540"></canvas>
+    <div class="hint">点击 / 空格 / ↑ 让小鸟跳一下，穿过水管缝隙得分</div>
+
+    <div id="overlay">
+      <div class="title" id="overTitle">点击开始</div>
+      <div id="overSub">空格 / 点击 起跳</div>
+      <button id="startBtn">开始游戏</button>
+    </div>
+
+    <script>
+      const SLUG = "flappy";
+      const cv = document.getElementById("cv");
+      const ctx = cv.getContext("2d");
+      const W = cv.width, H = cv.height;
+      const scoreEl = document.getElementById("score");
+      const bestEl = document.getElementById("best");
+      const overlay = document.getElementById("overlay");
+      const overTitle = document.getElementById("overTitle");
+      const overSub = document.getElementById("overSub");
+      const startBtn = document.getElementById("startBtn");
+
+      const GROUND_H = 60;
+      const PIPE_W = 56;
+      const GAP = 130;
+      const PIPE_INTERVAL = 1500; // ms
+      const G = 0.45;
+      const JUMP = -7.2;
+      const SPEED = 2.2;
+
+      let bird, pipes, score, best, alive, started, lastPipe, startTime, lastTime, animId;
+      best = +(localStorage.getItem("flappy_best") || 0);
+      bestEl.textContent = best;
+
+      function reset() {
+        bird = { x: 90, y: H / 2, r: 12, vy: 0, rot: 0 };
+        pipes = [];
+        score = 0;
+        alive = true;
+        started = false;
+        lastPipe = 0;
+        startTime = Date.now();
+        scoreEl.textContent = 0;
+        overlay.classList.add("show");
+        overTitle.textContent = "点击开始";
+        overSub.textContent = "空格 / 点击 起跳";
+        startBtn.textContent = "开始游戏";
+        draw();
+      }
+
+      function start() {
+        overlay.classList.remove("show");
+        started = true;
+        alive = true;
+        lastTime = performance.now();
+        lastPipe = lastTime;
+        startTime = Date.now();
+        try { parent.postMessage({ type: "game_start", payload: { slug: SLUG } }, "*"); } catch (_) {}
+        cancelAnimationFrame(animId);
+        animId = requestAnimationFrame(loop);
+      }
+
+      function flap() {
+        if (!started) { start(); bird.vy = JUMP; return; }
+        if (!alive) return;
+        bird.vy = JUMP;
+      }
+
+      function spawnPipe() {
+        const minTop = 40;
+        const maxTop = H - GROUND_H - GAP - 40;
+        const top = minTop + Math.random() * (maxTop - minTop);
+        pipes.push({ x: W, top, scored: false });
+      }
+
+      function update(dt) {
+        bird.vy += G;
+        bird.y += bird.vy;
+        bird.rot = Math.max(-0.4, Math.min(1.2, bird.vy / 12));
+
+        const now = performance.now();
+        if (now - lastPipe > PIPE_INTERVAL) {
+          spawnPipe();
+          lastPipe = now;
+        }
+        for (const p of pipes) p.x -= SPEED;
+        pipes = pipes.filter(p => p.x + PIPE_W > -10);
+
+        // collision
+        if (bird.y + bird.r > H - GROUND_H || bird.y - bird.r < 0) {
+          die();
+          return;
+        }
+        for (const p of pipes) {
+          if (bird.x + bird.r > p.x && bird.x - bird.r < p.x + PIPE_W) {
+            if (bird.y - bird.r < p.top || bird.y + bird.r > p.top + GAP) {
+              die();
+              return;
+            }
+          }
+          if (!p.scored && p.x + PIPE_W < bird.x - bird.r) {
+            p.scored = true;
+            score++;
+            scoreEl.textContent = score;
+          }
+        }
+      }
+
+      function die() {
+        if (!alive) return;
+        alive = false;
+        if (score > best) {
+          best = score;
+          localStorage.setItem("flappy_best", String(best));
+          bestEl.textContent = best;
+        }
+        overlay.classList.add("show");
+        overTitle.textContent = "Game Over";
+        overSub.textContent = "得分 " + score + " · 最高 " + best;
+        startBtn.textContent = "再来一局";
+        try {
+          parent.postMessage({
+            type: "game_end",
+            payload: { slug: SLUG, score, duration: Math.floor((Date.now() - startTime) / 1000) },
+          }, "*");
+        } catch (_) {}
+      }
+
+      function draw() {
+        // sky
+        const grad = ctx.createLinearGradient(0, 0, 0, H);
+        grad.addColorStop(0, "#87ceeb");
+        grad.addColorStop(1, "#bde0ff");
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, W, H);
+        // clouds
+        ctx.fillStyle = "rgba(255,255,255,0.7)";
+        for (let i = 0; i < 3; i++) {
+          const cx = ((Date.now() / 40 + i * 140) % (W + 80)) - 40;
+          const cy = 40 + i * 60;
+          ctx.beginPath();
+          ctx.arc(cx, cy, 14, 0, Math.PI * 2);
+          ctx.arc(cx + 14, cy + 4, 11, 0, Math.PI * 2);
+          ctx.arc(cx - 12, cy + 4, 10, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        // pipes
+        for (const p of pipes) {
+          drawPipe(p.x, p.top);
+        }
+        // ground
+        ctx.fillStyle = "#ded895";
+        ctx.fillRect(0, H - GROUND_H, W, GROUND_H);
+        ctx.fillStyle = "#7cb342";
+        ctx.fillRect(0, H - GROUND_H, W, 8);
+        // bird
+        ctx.save();
+        ctx.translate(bird.x, bird.y);
+        ctx.rotate(bird.rot);
+        ctx.fillStyle = "#fcd34d";
+        ctx.beginPath();
+        ctx.arc(0, 0, bird.r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#a16207";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        // wing
+        ctx.fillStyle = "#f59e0b";
+        ctx.beginPath();
+        ctx.ellipse(-2, 2, 7, 4, Math.sin(Date.now() / 80) * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+        // beak
+        ctx.fillStyle = "#ea580c";
+        ctx.beginPath();
+        ctx.moveTo(bird.r, -2);
+        ctx.lineTo(bird.r + 7, 0);
+        ctx.lineTo(bird.r, 3);
+        ctx.closePath();
+        ctx.fill();
+        // eye
+        ctx.fillStyle = "#fff";
+        ctx.beginPath(); ctx.arc(4, -4, 3, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#111";
+        ctx.beginPath(); ctx.arc(5, -4, 1.5, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+
+        // score big
+        ctx.fillStyle = "rgba(0,0,0,0.4)";
+        ctx.font = "bold 36px system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(score, W / 2, 60);
+        ctx.fillStyle = "#fff";
+        ctx.fillText(score, W / 2 - 2, 58);
+      }
+
+      function drawPipe(x, top) {
+        ctx.fillStyle = "#22c55e";
+        ctx.fillRect(x, 0, PIPE_W, top);
+        ctx.fillRect(x, top + GAP, PIPE_W, H - GROUND_H - top - GAP);
+        // caps
+        ctx.fillStyle = "#16a34a";
+        ctx.fillRect(x - 3, top - 18, PIPE_W + 6, 18);
+        ctx.fillRect(x - 3, top + GAP, PIPE_W + 6, 18);
+        // highlight
+        ctx.fillStyle = "rgba(255,255,255,0.25)";
+        ctx.fillRect(x + 6, 0, 4, top);
+        ctx.fillRect(x + 6, top + GAP, 4, H - GROUND_H - top - GAP);
+      }
+
+      function loop(t) {
+        const dt = t - lastTime;
+        lastTime = t;
+        if (alive && started) update(dt);
+        draw();
+        if (started) animId = requestAnimationFrame(loop);
+      }
+
+      document.addEventListener("keydown", (e) => {
+        if (e.key === " " || e.key === "ArrowUp" || e.key === "w") {
+          e.preventDefault();
+          flap();
+        }
+      });
+      cv.addEventListener("pointerdown", (e) => { e.preventDefault(); flap(); });
+      startBtn.addEventListener("click", () => {
+        if (!alive) reset();
+        start();
+        bird.vy = JUMP;
+      });
+
+      reset();
+    </script>
+  </body>
+</html>

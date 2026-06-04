@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>井字棋</title>
+    <style>
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; height: 100%; background: #18181b; color: #fafafa; font-family: system-ui, sans-serif; }
+      body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; }
+      h1 { margin: 0; font-size: 22px; letter-spacing: 2px; color: #a1a1aa; }
+      #status { font-size: 18px; font-weight: 600; min-height: 24px; }
+      #board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; background: #27272a; padding: 4px; border-radius: 8px; }
+      .cell { width: 86px; height: 86px; background: #18181b; display: flex; align-items: center; justify-content: center; font-size: 48px; font-weight: 700; cursor: pointer; border-radius: 4px; user-select: none; }
+      .cell:hover:empty { background: #2a2a2e; }
+      .cell.x { color: #38bdf8; }
+      .cell.o { color: #ff6a00; }
+      .cell.win { background: #14532d; }
+      button { background: #ff6a00; color: #fff; border: 0; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+      .meta { font-size: 12px; color: #71717a; }
+    </style>
+  </head>
+  <body>
+    <h1>TIC · TAC · TOE</h1>
+    <div id="status">你是 X，先手</div>
+    <div id="board"></div>
+    <button id="reset">重开一局</button>
+    <div class="meta">胜负积分：<span id="wins">0</span> 胜 / <span id="losses">0</span> 负 / <span id="draws">0</span> 平</div>
+
+    <script>
+      const boardEl = document.getElementById("board");
+      const statusEl = document.getElementById("status");
+      const winsEl = document.getElementById("wins");
+      const lossesEl = document.getElementById("losses");
+      const drawsEl = document.getElementById("draws");
+
+      let cells, turn, over, startTime;
+      let wins = 0, losses = 0, draws = 0;
+
+      const LINES = [
+        [0,1,2],[3,4,5],[6,7,8],
+        [0,3,6],[1,4,7],[2,5,8],
+        [0,4,8],[2,4,6],
+      ];
+
+      function reset() {
+        cells = Array(9).fill("");
+        turn = "X"; over = false;
+        startTime = Date.now();
+        try { parent.postMessage({ type: "game_start", payload: { slug: "tic-tac-toe" } }, "*"); } catch (_) {}
+        render();
+        statusEl.textContent = "你是 X，先手";
+      }
+
+      function render() {
+        boardEl.innerHTML = "";
+        cells.forEach((v, i) => {
+          const div = document.createElement("div");
+          div.className = "cell" + (v ? " " + v.toLowerCase() : "");
+          div.dataset.i = i;
+          div.textContent = v;
+          div.addEventListener("click", onClick);
+          boardEl.appendChild(div);
+        });
+      }
+
+      function winner(state) {
+        for (const [a, b, c] of LINES) {
+          if (state[a] && state[a] === state[b] && state[b] === state[c]) return { p: state[a], line: [a, b, c] };
+        }
+        if (state.every((x) => x)) return { p: "draw" };
+        return null;
+      }
+
+      function onClick(e) {
+        if (over) return;
+        const i = +e.target.dataset.i;
+        if (cells[i] || turn !== "X") return;
+        cells[i] = "X"; render();
+        const w = winner(cells);
+        if (w) return finish(w);
+        turn = "O";
+        statusEl.textContent = "AI 思考中…";
+        setTimeout(aiMove, 300);
+      }
+
+      function aiMove() {
+        const best = minimax(cells.slice(), "O").i;
+        cells[best] = "O"; render();
+        const w = winner(cells);
+        if (w) return finish(w);
+        turn = "X";
+        statusEl.textContent = "你的回合";
+      }
+
+      function minimax(state, player) {
+        const w = winner(state);
+        if (w) {
+          if (w.p === "O") return { score: 10 };
+          if (w.p === "X") return { score: -10 };
+          return { score: 0 };
+        }
+        const moves = [];
+        for (let i = 0; i < 9; i++) {
+          if (!state[i]) {
+            state[i] = player;
+            const res = minimax(state, player === "O" ? "X" : "O");
+            moves.push({ i, score: res.score });
+            state[i] = "";
+          }
+        }
+        if (player === "O") return moves.reduce((a, b) => (b.score > a.score ? b : a));
+        return moves.reduce((a, b) => (b.score < a.score ? b : a));
+      }
+
+      function finish(w) {
+        over = true;
+        if (w.line) {
+          w.line.forEach((i) => boardEl.children[i].classList.add("win"));
+        }
+        let result, scoreEvent;
+        if (w.p === "X") { wins++; result = "你赢了！"; scoreEvent = 1; }
+        else if (w.p === "O") { losses++; result = "AI 赢了"; scoreEvent = -1; }
+        else { draws++; result = "平局"; scoreEvent = 0; }
+        winsEl.textContent = wins; lossesEl.textContent = losses; drawsEl.textContent = draws;
+        statusEl.textContent = result;
+        try {
+          parent.postMessage({
+            type: "game_end",
+            payload: { slug: "tic-tac-toe", score: scoreEvent, duration: Math.round((Date.now() - startTime) / 1000) },
+          }, "*");
+        } catch (_) {}
+      }
+
+      document.getElementById("reset").addEventListener("click", reset);
+      reset();
+    </script>
+  </body>
+</html>

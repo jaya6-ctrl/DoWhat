@@ -1,0 +1,208 @@
+// Prisma schema for DoWhat — see docs/TECH_DESIGN.md §5
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pg_trgm, unaccent]
+}
+
+enum Orientation {
+  LANDSCAPE
+  PORTRAIT
+}
+
+enum GameStatus {
+  DRAFT
+  REVIEW
+  PUBLISHED
+  OFFLINE
+}
+
+enum Role {
+  USER
+  MOD
+  ADMIN
+}
+
+enum CommentStatus {
+  VISIBLE
+  HIDDEN
+  DELETED
+}
+
+model Game {
+  id            String      @id @default(cuid())
+  slug          String      @unique
+  title         String
+  titleEn       String?
+  description   String
+  cover         String
+  screenshots   String[]
+  entryUrl      String
+  width         Int         @default(800)
+  height        Int         @default(600)
+  orientation   Orientation @default(LANDSCAPE)
+  controls      Json
+  status        GameStatus  @default(DRAFT)
+  publishedAt   DateTime?
+  playCount     Int         @default(0)
+  favoriteCount Int         @default(0)
+  ratingAvg     Float       @default(0)
+  ratingCount   Int         @default(0)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  categories CategoryOnGame[]
+  tags       TagOnGame[]
+  plays      Play[]
+  favorites  Favorite[]
+  comments   Comment[]
+  ratings    Rating[]
+
+  @@index([status, publishedAt])
+  @@index([playCount])
+}
+
+model Category {
+  id    String           @id @default(cuid())
+  slug  String           @unique
+  name  String
+  icon  String?
+  sort  Int              @default(0)
+  games CategoryOnGame[]
+}
+
+model CategoryOnGame {
+  game       Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  gameId     String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  categoryId String
+
+  @@id([gameId, categoryId])
+}
+
+model Tag {
+  id    String      @id @default(cuid())
+  slug  String      @unique
+  name  String
+  games TagOnGame[]
+}
+
+model TagOnGame {
+  game   Game   @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  gameId String
+  tag    Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  tagId  String
+
+  @@id([gameId, tagId])
+}
+
+model User {
+  id              String    @id @default(cuid())
+  email           String?   @unique
+  name            String    @unique
+  avatar          String?
+  passwordHash    String?
+  emailVerifiedAt DateTime?
+  role            Role      @default(USER)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  plays               Play[]
+  favorites           Favorite[]
+  comments            Comment[]
+  ratings             Rating[]
+  sessions            Session[]
+  emailVerifyTokens   EmailVerifyToken[]
+  passwordResetTokens PasswordResetToken[]
+}
+
+model Session {
+  id        String   @id
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  userAgent String?
+  ip        String?
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model EmailVerifyToken {
+  token      String    @id
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+}
+
+model PasswordResetToken {
+  token      String    @id
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+}
+
+model Play {
+  id        String    @id @default(cuid())
+  game      Game      @relation(fields: [gameId], references: [id])
+  gameId    String
+  user      User?     @relation(fields: [userId], references: [id])
+  userId    String?
+  ip        String?
+  duration  Int?
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+
+  @@index([gameId, startedAt])
+  @@index([userId, startedAt])
+}
+
+model Favorite {
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  game      Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  gameId    String
+  createdAt DateTime @default(now())
+
+  @@id([userId, gameId])
+}
+
+model Comment {
+  id        String        @id @default(cuid())
+  game      Game          @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  gameId    String
+  user      User          @relation(fields: [userId], references: [id])
+  userId    String
+  parentId  String?
+  content   String
+  likes     Int           @default(0)
+  status    CommentStatus @default(VISIBLE)
+  createdAt DateTime      @default(now())
+
+  @@index([gameId, createdAt])
+}
+
+model Rating {
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  game      Game     @relation(fields: [gameId], references: [id])
+  gameId    String
+  score     Int
+  createdAt DateTime @default(now())
+
+  @@id([userId, gameId])
+}
