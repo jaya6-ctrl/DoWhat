@@ -3,9 +3,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      # build 容器通过 host-gateway 反向访问宿主机,从而连到下面 postgres 暴露的 127.0.0.1:5432
-      extra_hosts:
-        - "host.docker.internal:host-gateway"
+      # build 容器加入 dowhat-net,从而可以直接通过服务名 postgres 解析
+      # (需要 deploy.sh 先 docker compose up -d postgres 把网络和 postgres 拉起来)
+      network: dowhat-net
       args:
         DATABASE_URL: ${BUILD_DATABASE_URL}
     image: dowhat-app:latest
@@ -20,6 +20,8 @@ services:
         condition: service_healthy
       mailpit:
         condition: service_started
+    networks:
+      - dowhat-net
     ports:
       - "3000:3000"
     volumes:
@@ -33,9 +35,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-dowhat}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dowhat}
       POSTGRES_DB: ${POSTGRES_DB:-dowhat}
-    # 仅暴露到宿主机 loopback,外网无法直接访问;给 build 容器(network:host)用
-    ports:
-      - "127.0.0.1:5432:5432"
+    networks:
+      - dowhat-net
     volumes:
       - dowhat_pg_data:/var/lib/postgresql/data
     healthcheck:
@@ -48,6 +49,8 @@ services:
     image: redis:7-alpine
     container_name: dowhat-redis
     restart: unless-stopped
+    networks:
+      - dowhat-net
     volumes:
       - dowhat_redis_data:/data
     healthcheck:
@@ -60,9 +63,16 @@ services:
     image: axllent/mailpit:latest
     container_name: dowhat-mailpit
     restart: unless-stopped
+    networks:
+      - dowhat-net
     ports:
-      # Web UI 仅绑本机 loopback，外网看不到。通过 SSH 端口转发查看。
+      # Web UI 仅绑本机 loopback,外网看不到。通过 SSH 端口转发查看。
       - "127.0.0.1:8025:8025"
+
+networks:
+  # 显式命名的网络,build 阶段也要 join 进来
+  dowhat-net:
+    name: dowhat-net
 
 volumes:
   dowhat_pg_data:
