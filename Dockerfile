@@ -34,11 +34,13 @@ RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
-# Prisma migrations + schema for `prisma migrate deploy`
-COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma ./node_modules/prisma
+# 说明:
+# - migrate 已在 builder 阶段执行(Dockerfile 里的 prisma migrate deploy),
+#   所以 runner 不再需要 prisma CLI 和 migrations 文件
+# - 运行时所需的 @prisma/client 已被 Next.js standalone tracer 自动复制到
+#   /app/.next/standalone/node_modules/ 下,不用单独 COPY
+# - 注意:pnpm 的 node_modules 是嵌套布局(.pnpm/<hash>/...),
+#   无法像 npm 那样直接 COPY /app/node_modules/.prisma 等扁平路径
 
 COPY --chown=nextjs:nodejs docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
