@@ -3,8 +3,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      # build 容器走宿主机网络,这样能通过 127.0.0.1:5432 连到下面的 postgres
-      network: host
+      # build 容器通过 host-gateway 反向访问宿主机,从而连到下面 postgres 暴露的 127.0.0.1:5432
+      extra_hosts:
+        - "host.docker.internal:host-gateway"
       args:
         DATABASE_URL: ${BUILD_DATABASE_URL}
     image: dowhat-app:latest
