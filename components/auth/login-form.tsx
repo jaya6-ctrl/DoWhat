@@ -29,7 +29,22 @@ export function LoginForm({ next, notice }: { next: string; notice?: string }) {
         autoComplete="current-password"
         error={state.fieldErrors?.password}
       />
-      <SubmitButton>登录</SubmitButton>
+
+      {/* 记住我 */}
+      <label className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          name="remember"
+          className="h-4 w-4 border-2 border-[color:var(--color-border)] bg-[color:var(--color-bg)] accent-[color:var(--color-primary)]"
+        />
+        <span style={{ fontFamily: 'var(--font-pixel)', fontSize: '8px', color: 'var(--color-muted)' }}>
+          REMEMBER ME
+        </span>
+      </label>
+
+      <SubmitButton>
+        <span>▶ LOGIN</span>
+      </SubmitButton>
     </form>
   );
 }

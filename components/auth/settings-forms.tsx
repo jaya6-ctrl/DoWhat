@@ -31,26 +31,24 @@ export function ProfileForm({
         error={state.fieldErrors?.name}
       />
       <div className="flex flex-col gap-1.5">
-        <span className="text-sm">头像</span>
+        <span className="flex items-center gap-1.5 px-sm text-[color:var(--color-fg)]">
+          <span className="inline-block h-1.5 w-1.5 bg-[color:var(--color-primary)]" />
+          AVATAR
+        </span>
         {currentAvatar ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={currentAvatar}
-            alt="当前头像"
-            className="h-16 w-16 rounded-full object-cover"
-          />
+          <img src={currentAvatar} alt="当前头像" className="h-16 w-16 border-2 border-[color:var(--color-primary)] object-cover" />
         ) : (
-          <p className="text-xs text-[color:var(--color-muted)]">尚未上传头像</p>
+          <p className="px-xs text-[color:var(--color-muted)]">尚未上传头像</p>
         )}
         <input
           type="file"
           name="avatar"
           accept="image/png,image/jpeg,image/webp"
-          className="text-sm"
+          className="px-xs text-[color:var(--color-muted)]"
         />
-        <p className="text-xs text-[color:var(--color-muted)]">PNG / JPEG / WebP，最大 2 MB</p>
+        <p className="px-xs text-[color:var(--color-muted)]">PNG / JPEG / WebP，最大 2 MB</p>
       </div>
-      <SubmitButton>保存资料</SubmitButton>
+      <SubmitButton>▶ SAVE PROFILE</SubmitButton>
     </form>
   );
 }
@@ -78,7 +76,7 @@ export function ChangePasswordForm() {
         placeholder="至少 8 位，包含字母和数字"
         error={state.fieldErrors?.newPassword}
       />
-      <SubmitButton>更新密码</SubmitButton>
+      <SubmitButton>▶ UPDATE PASSWORD</SubmitButton>
     </form>
   );
 }

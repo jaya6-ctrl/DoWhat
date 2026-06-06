@@ -8,44 +8,55 @@ export async function SiteHeader() {
   const [categories, user] = await Promise.all([getCategories(), currentUser()]);
 
   return (
-    <header className="sticky top-0 z-40 border-b border-[color:var(--color-border)] bg-[color:var(--color-surface)]/90 backdrop-blur">
-      <div className="mx-auto flex h-14 max-w-7xl items-center gap-2 px-3 sm:gap-4 sm:px-4">
-        <Link href="/" className="flex items-center gap-2">
-          <span className="grid h-8 w-8 place-items-center rounded-lg bg-[color:var(--color-primary)] text-base font-bold text-white">
+    <header className="sticky top-0 z-40 border-b-2 border-[color:var(--color-border)] bg-[color:var(--color-surface)]/95 backdrop-blur-sm">
+      <div className="mx-auto flex h-12 max-w-7xl items-center gap-2 px-3 sm:gap-4 sm:px-4">
+        <Link href="/" className="flex items-center gap-2 group">
+          <span
+            className="flex h-8 w-8 items-center justify-center text-sm font-bold text-[#0f0f23]"
+            style={{ fontFamily: 'var(--font-pixel)', background: 'var(--color-primary)', boxShadow: '2px 2px 0 rgba(0,0,0,0.4)' }}
+          >
             D
           </span>
-          <span className="text-lg font-semibold tracking-tight">DoWhat</span>
+          <span
+            className="text-sm tracking-wider text-[color:var(--color-primary)]"
+            style={{ fontFamily: 'var(--font-pixel)', fontSize: '11px' }}
+          >
+            DoWhat
+          </span>
         </Link>
 
-        <nav className="hidden items-center gap-1 md:flex">
+        <nav className="hidden items-center gap-0.5 md:flex">
           <Link
             href="/games"
-            className="rounded-md px-3 py-1.5 text-sm text-[color:var(--color-muted)] hover:bg-black/5 hover:text-[color:var(--color-fg)] dark:hover:bg-white/10"
+            className="border-2 border-transparent px-3 py-1.5 text-xs text-[color:var(--color-muted)] transition-colors hover:border-[color:var(--color-border)] hover:text-[color:var(--color-fg)]"
+            style={{ fontFamily: 'var(--font-pixel)', fontSize: '9px' }}
           >
-            全部游戏
+            GAMES
           </Link>
           <Link
             href="/rank"
-            className="rounded-md px-3 py-1.5 text-sm text-[color:var(--color-muted)] hover:bg-black/5 hover:text-[color:var(--color-fg)] dark:hover:bg-white/10"
+            className="border-2 border-transparent px-3 py-1.5 text-xs text-[color:var(--color-muted)] transition-colors hover:border-[color:var(--color-border)] hover:text-[color:var(--color-fg)]"
+            style={{ fontFamily: 'var(--font-pixel)', fontSize: '9px' }}
           >
-            榜单
+            RANK
           </Link>
           <div className="group relative">
             <button
               type="button"
-              className="rounded-md px-3 py-1.5 text-sm text-[color:var(--color-muted)] hover:bg-black/5 hover:text-[color:var(--color-fg)] dark:hover:bg-white/10"
+              className="border-2 border-transparent px-3 py-1.5 text-xs text-[color:var(--color-muted)] transition-colors hover:border-[color:var(--color-border)] hover:text-[color:var(--color-fg)]"
+              style={{ fontFamily: 'var(--font-pixel)', fontSize: '9px' }}
             >
-              分类
+              TYPE
             </button>
-            <div className="invisible absolute left-0 top-full grid w-72 grid-cols-4 gap-1 rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-2 opacity-0 shadow-lg transition group-hover:visible group-hover:opacity-100">
+            <div className="invisible absolute left-0 top-full mt-px grid w-72 grid-cols-4 gap-0 border-2 border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-2 opacity-0 shadow-[4px_4px_0_rgba(0,0,0,0.4)] transition group-hover:visible group-hover:opacity-100">
               {categories.map((c) => (
                 <Link
                   key={c.slug}
                   href={`/games?category=${c.slug}`}
-                  className="flex flex-col items-center gap-1 rounded-md px-2 py-2 text-xs hover:bg-black/5 dark:hover:bg-white/10"
+                  className="flex flex-col items-center gap-1 border-2 border-transparent px-2 py-2 text-xs transition-colors hover:border-[color:var(--color-primary)] hover:bg-[color:var(--color-primary)]/10"
                 >
-                  <span className="text-xl">{c.icon ?? "🎮"}</span>
-                  <span>{c.name}</span>
+                  <span className="text-lg">{c.icon ?? "🎮"}</span>
+                  <span style={{ fontFamily: 'var(--font-pixel)', fontSize: '8px' }}>{c.name}</span>
                 </Link>
               ))}
             </div>
@@ -57,7 +68,7 @@ export async function SiteHeader() {
             name="q"
             type="search"
             placeholder="搜索游戏..."
-            className="h-9 w-full rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-bg)] px-4 text-sm outline-none focus:border-[color:var(--color-primary)]"
+            className="pixel-search h-8 w-full border-2 border-[color:var(--color-border)] bg-[color:var(--color-bg)] px-3 text-xs text-[color:var(--color-fg)] placeholder-[color:var(--color-muted)] outline-none transition-colors focus:border-[color:var(--color-primary)]"
           />
         </form>
 
@@ -68,15 +79,17 @@ export async function SiteHeader() {
             <>
               <Link
                 href="/login"
-                className="rounded-md px-3 py-1.5 text-sm text-[color:var(--color-muted)] hover:text-[color:var(--color-fg)]"
+                className="border-2 border-transparent px-3 py-1 text-xs text-[color:var(--color-muted)] transition-colors hover:border-[color:var(--color-border)] hover:text-[color:var(--color-fg)]"
+                style={{ fontFamily: 'var(--font-pixel)', fontSize: '9px' }}
               >
-                登录
+                LOGIN
               </Link>
               <Link
                 href="/register"
-                className="rounded-md bg-[color:var(--color-primary)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[color:var(--color-primary-hover)]"
+                className="px-3 py-1.5 text-xs font-bold text-[#0f0f23] transition-transform hover:brightness-110"
+                style={{ fontFamily: 'var(--font-pixel)', fontSize: '9px', background: 'var(--color-primary)', boxShadow: '2px 2px 0 rgba(0,0,0,0.4)' }}
               >
-                注册
+                SIGN UP
               </Link>
             </>
           )}

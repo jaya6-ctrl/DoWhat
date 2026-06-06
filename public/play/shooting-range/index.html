@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+    <title>射击定位练习</title>
+    <style>
+      * { box-sizing: border-box; touch-action: none; -webkit-tap-highlight-color: transparent; user-select: none; cursor: none; }
+      html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #1a202c; color: #e2e8f0; font-family: system-ui, sans-serif; }
+      body { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+      #canvas { border-radius: 8px; }
+      #startScreen, #levelScreen, #endScreen {
+        position: fixed; inset: 0; background: rgba(26,32,44,0.95);
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 16px; z-index: 20; transition: opacity 0.3s;
+      }
+      .screen-title { font-size: 42px; font-weight: 700; }
+      .screen-sub { font-size: 18px; opacity: 0.8; max-width: 400px; text-align: center; line-height: 1.6; }
+      .screen-stat { font-size: 24px; font-weight: 600; color: #fbd38d; }
+      .stars { font-size: 36px; }
+      button { background: rgba(229,62,62,0.8); color: #fff; border: 0; padding: 12px 32px; border-radius: 8px;
+        cursor: pointer; font-weight: 700; font-size: 16px; transition: all 0.15s; }
+      button:hover { background: rgba(229,62,62,1); transform: scale(1.05); }
+      .level-info { font-size: 16px; opacity: 0.6; }
+      .combo-text { font-size: 28px; font-weight: 700; color: #fbd38d; text-shadow: 0 0 20px rgba(251,211,141,0.5); }
+    </style>
+  </head>
+  <body>
+    <canvas id="canvas"></canvas>
+
+    <div id="startScreen">
+      <div class="screen-title">🎯 射击定位练习</div>
+      <div class="screen-sub">
+        移动瞄准 → 点击射击 → 越接近靶心分越高<br>
+        每关有限弹药，合理使用！<br>
+        按 R 键 / 双击空白区域装弹
+      </div>
+      <button id="startBtn">开始射击</button>
+    </div>
+
+    <div id="levelScreen" style="display:none">
+      <div class="screen-title" id="levelTitle"></div>
+      <div class="level-info" id="levelInfo"></div>
+      <button id="levelStartBtn">准备好了</button>
+    </div>
+
+    <div id="endScreen" style="display:none">
+      <div class="screen-title" id="endTitle"></div>
+      <div class="stars" id="endStars"></div>
+      <div class="screen-stat" id="endScore"></div>
+      <div class="screen-stat" id="endAccuracy"></div>
+      <div class="screen-stat" id="endHits"></div>
+      <button id="restartBtn">再来一次</button>
+    </div>
+
+    <script>
+      const canvas = document.getElementById('canvas');
+      const ctx = canvas.getContext('2d');
+
+      const LEVELS = [
+        { name: '新手靶场', desc: '静止大靶，熟悉操作', targets: 6, time: 30, ammo: 10, minR: 32, maxR: 45, speed: 0, spawnRate: 2000 },
+        { name: '移动训练', desc: '靶子开始缓慢移动', targets: 8, time: 30, ammo: 12, minR: 28, maxR: 40, speed: 1.2, spawnRate: 1800 },
+        { name: '精准考验', desc: '靶子更小、更快', targets: 10, time: 30, ammo: 14, minR: 22, maxR: 34, speed: 2, spawnRate: 1500 },
+        { name: '速射挑战', desc: '高速小靶，考验反应', targets: 12, time: 25, ammo: 16, minR: 18, maxR: 28, speed: 3, spawnRate: 1200 },
+        { name: '终极射手', desc: '极限精准，一击必杀', targets: 15, time: 25, ammo: 18, minR: 14, maxR: 24, speed: 3.5, spawnRate: 1000 },
+      ];
+
+      const HIT_ZONE = [
+        { ratio: 0.2, score: 100, label: '十环！', color: '#fbd38d' },
+        { ratio: 0.45, score: 60, label: '八环', color: '#fc8181' },
+        { ratio: 0.7, score: 30, label: '六环', color: '#68d391' },
+        { ratio: 1.0, score: 10, label: '命中', color: '#63b3ed' },
+      ];
+
+      let W, H, mouseX, mouseY;
+      let targets, particles, floatingTexts;
+      let level, score, totalScore, ammo, maxAmmo, hits, shots, combo, maxCombo;
+      let gameState, timeLeft, lastSpawn, spawnTimer;
+      let lastTime, animId;
+      let shakeX, shakeY, shakeTime;
+      let reloadCooldown;
+      let levelHits, levelShots;
+
+      function resize() {
+        W = window.innerWidth; H = window.innerHeight;
+        canvas.width = W; canvas.height = H;
+      }
+
+      function init() {
+        resize();
+        totalScore = 0; level = 0; gameState = 'start';
+        mouseX = W / 2; mouseY = H / 2;
+        document.getElementById('startScreen').style.display = 'flex';
+        document.getElementById('levelScreen').style.display = 'none';
+        document.getElementById('endScreen').style.display = 'none';
+        draw();
+      }
+
+      function startLevel() {
+        const lv = LEVELS[level];
+        targets = []; particles = []; floatingTexts = [];
+        score = 0; ammo = lv.ammo; maxAmmo = lv.ammo;
+        hits = 0; shots = 0; combo = 0; maxCombo = 0;
+        levelHits = 0; levelShots = 0;
+        timeLeft = lv.time; lastSpawn = 0;
+        shakeX = 0; shakeY = 0; shakeTime = 0;
+        reloadCooldown = 0;
+        gameState = 'playing';
+        document.getElementById('levelScreen').style.display = 'none';
+        lastTime = performance.now();
+        loop(lastTime);
+        try { parent.postMessage({ type: 'game_start', payload: { slug: 'shooting-range' } }, '*'); } catch (_) {}
+      }
+
+      function showLevelScreen() {
+        const lv = LEVELS[level];
+        document.getElementById('levelTitle').textContent = '第 ' + (level + 1) + ' 关 · ' + lv.name;
+        document.getElementById('levelInfo').textContent = lv.desc + ' | 弹药: ' + lv.ammo + ' | 时间: ' + lv.time + 's';
+        document.getElementById('levelScreen').style.display = 'flex';
+      }
+
+      function spawnTarget() {
+        const lv = LEVELS[level];
+        const r = lv.minR + Math.random() * (lv.maxR - lv.minR);
+        const x = r + Math.random() * (W - r * 2);
+        const y = r + 80 + Math.random() * (H - r * 2 - 120);
+        let vx = 0, vy = 0;
+        if (lv.speed > 0) {
+          const angle = Math.random() * Math.PI * 2;
+          const spd = lv.speed * (0.6 + Math.random() * 0.8);
+          vx = Math.cos(angle) * spd;
+          vy = Math.sin(angle) * spd;
+        }
+        targets.push({ x, y, r, vx, vy, life: 6000, born: performance.now(), opacity: 0 });
+      }
+
+      function loop(now) {
+        if (gameState !== 'playing') return;
+        const dt = Math.min(now - lastTime, 50);
+        lastTime = now;
+        update(now, dt);
+        draw();
+        animId = requestAnimationFrame(loop);
+      }
+
+      function update(now, dt) {
+        const lv = LEVELS[level];
+        timeLeft -= dt / 1000;
+        if (timeLeft <= 0) { timeLeft = 0; endLevel(); return; }
+
+        if (now - lastSpawn > lv.spawnRate && targets.length < 5) {
+          spawnTarget();
+          lastSpawn = now;
+        }
+
+        if (reloadCooldown > 0) reloadCooldown -= dt;
+
+        for (let i = targets.length - 1; i >= 0; i--) {
+          const t = targets[i];
+          t.x += t.vx; t.y += t.vy;
+          if (t.x - t.r < 0 || t.x + t.r > W) t.vx *= -1;
+          if (t.y - t.r < 60 || t.y + t.r > H - 20) t.vy *= -1;
+          t.x = Math.max(t.r, Math.min(W - t.r, t.x));
+          t.y = Math.max(60 + t.r, Math.min(H - 20 - t.r, t.y));
+          t.life -= dt;
+          const age = now - t.born;
+          t.opacity = age < 200 ? age / 200 : t.life < 500 ? t.life / 500 : 1;
+          if (t.life <= 0) { targets.splice(i, 1); combo = 0; }
+        }
+
+        for (let i = particles.length - 1; i >= 0; i--) {
+          const p = particles[i];
+          p.x += p.vx; p.y += p.vy; p.vy += 0.15; p.life -= dt;
+          if (p.life <= 0) particles.splice(i, 1);
+        }
+
+        for (let i = floatingTexts.length - 1; i >= 0; i--) {
+          const ft = floatingTexts[i];
+          ft.y -= 1.2; ft.life -= dt;
+          if (ft.life <= 0) floatingTexts.splice(i, 1);
+        }
+
+        if (shakeTime > 0) { shakeTime -= dt; shakeX = (Math.random() - 0.5) * 6; shakeY = (Math.random() - 0.5) * 6; }
+        else { shakeX = 0; shakeY = 0; }
+      }
+
+      function draw() {
+        ctx.clearRect(0, 0, W, H);
+        ctx.save();
+        ctx.translate(shakeX, shakeY);
+
+        const grad = ctx.createLinearGradient(0, 0, 0, H);
+        grad.addColorStop(0, '#1a202c'); grad.addColorStop(1, '#2d3748');
+        ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
+
+        for (let i = 0; i < 30; i++) {
+          ctx.fillStyle = 'rgba(255,255,255,0.02)';
+          ctx.fillRect((i * 137 + 50) % W, (i * 89 + 30) % H, 2, 2);
+        }
+
+        for (const t of targets) drawTarget(t);
+
+        for (const p of particles) {
+          ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
+          ctx.fillStyle = p.color;
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+
+        for (const ft of floatingTexts) {
+          ctx.globalAlpha = Math.max(0, ft.life / ft.maxLife);
+          ctx.font = 'bold ' + ft.size + 'px system-ui';
+          ctx.textAlign = 'center';
+          ctx.fillStyle = ft.color;
+          ctx.fillText(ft.text, ft.x, ft.y);
+        }
+        ctx.globalAlpha = 1;
+
+        ctx.restore();
+
+        if (gameState === 'playing') drawHUD();
+        drawCrosshair();
+      }
+
+      function drawTarget(t) {
+        ctx.globalAlpha = t.opacity;
+        const cx = t.x, cy = t.y, r = t.r;
+        const rings = [
+          { ratio: 1.0, fill: '#fff' },
+          { ratio: 0.8, fill: '#e53e3e' },
+          { ratio: 0.6, fill: '#fff' },
+          { ratio: 0.4, fill: '#e53e3e' },
+          { ratio: 0.2, fill: '#fbd38d' },
+        ];
+        for (const ring of rings) {
+          ctx.beginPath(); ctx.arc(cx, cy, r * ring.ratio, 0, Math.PI * 2);
+          ctx.fillStyle = ring.fill; ctx.fill();
+          ctx.strokeStyle = 'rgba(0,0,0,0.15)'; ctx.lineWidth = 1; ctx.stroke();
+        }
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(0,0,0,0.2)'; ctx.lineWidth = 2; ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+
+      function drawHUD() {
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(0, 0, W, 56);
+        ctx.font = 'bold 16px system-ui'; ctx.textAlign = 'left';
+        ctx.fillStyle = '#e2e8f0';
+        ctx.fillText('第 ' + (level + 1) + ' 关 · ' + LEVELS[level].name, 16, 22);
+        ctx.fillText('得分: ' + score, 16, 44);
+
+        ctx.textAlign = 'center';
+        const timeColor = timeLeft <= 5 ? '#fc8181' : '#e2e8f0';
+        ctx.fillStyle = timeColor;
+        ctx.fillText('⏱ ' + Math.ceil(timeLeft) + 's', W / 2, 22);
+        ctx.fillText('🎯 ' + hits + '/' + shots + (shots > 0 ? ' (' + Math.round(hits / shots * 100) + '%)' : ''), W / 2, 44);
+
+        ctx.textAlign = 'right';
+        const ammoColor = ammo <= 3 ? '#fc8181' : ammo <= 6 ? '#fbd38d' : '#e2e8f0';
+        ctx.fillStyle = ammoColor;
+        ctx.fillText('🔫 ' + ammo + '/' + maxAmmo, W - 16, 22);
+        if (combo >= 2) {
+          ctx.fillStyle = '#fbd38d';
+          ctx.fillText('🔥 连击 ×' + combo, W - 16, 44);
+        }
+
+        if (ammo <= 0 && reloadCooldown <= 0) {
+          ctx.textAlign = 'center';
+          ctx.font = 'bold 20px system-ui';
+          ctx.fillStyle = '#fc8181';
+          ctx.fillText('按 R 键 / 双击装弹', W / 2, H - 40);
+        }
+      }
+
+      function drawCrosshair() {
+        const x = mouseX, y = mouseY;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,80,80,0.9)';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(x, y, 18, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(x, y, 2, 0, Math.PI * 2); ctx.fillStyle = '#ff5050'; ctx.fill();
+        ctx.beginPath(); ctx.moveTo(x - 28, y); ctx.lineTo(x - 8, y); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x + 8, y); ctx.lineTo(x + 28, y); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x, y - 28); ctx.lineTo(x, y - 8); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x, y + 8); ctx.lineTo(x, y + 28); ctx.stroke();
+        ctx.restore();
+      }
+
+      function shoot(x, y) {
+        if (gameState !== 'playing') return;
+        if (ammo <= 0) return;
+        ammo--; shots++; levelShots++;
+
+        let hitTarget = null;
+        let bestDist = Infinity;
+        for (const t of targets) {
+          const dist = Math.hypot(x - t.x, y - t.y);
+          if (dist < t.r && dist < bestDist) { bestDist = dist; hitTarget = t; }
+        }
+
+        if (hitTarget) {
+          const distRatio = bestDist / hitTarget.r;
+          let hitZone = HIT_ZONE[3];
+          for (const zone of HIT_ZONE) { if (distRatio <= zone.ratio) { hitZone = zone; break; } }
+
+          hits++; levelHits++; combo++;
+          if (combo > maxCombo) maxCombo = combo;
+          const comboMult = Math.min(combo, 5);
+          const earned = hitZone.score * comboMult;
+          score += earned;
+
+          spawnHitParticles(hitTarget.x, hitTarget.y, hitTarget.r, hitZone.color);
+          floatingTexts.push({
+            x: hitTarget.x, y: hitTarget.y - hitTarget.r - 10,
+            text: hitZone.label + (comboMult > 1 ? ' ×' + comboMult : '') + ' +' + earned,
+            color: hitZone.color, size: 20 + comboMult * 2, life: 800, maxLife: 800,
+          });
+
+          const idx = targets.indexOf(hitTarget);
+          if (idx >= 0) targets.splice(idx, 1);
+
+          shakeTime = 150;
+        } else {
+          combo = 0;
+          spawnMissParticles(x, y);
+          floatingTexts.push({ x, y: y - 15, text: 'Miss', color: '#718096', size: 16, life: 500, maxLife: 500 });
+        }
+
+        if (ammo <= 0 && reloadCooldown <= 0) {
+          setTimeout(() => {
+            if (gameState === 'playing') {
+              floatingTexts.push({ x: W / 2, y: H / 2, text: '弹药耗尽！按 R 装弹', color: '#fc8181', size: 22, life: 1500, maxLife: 1500 });
+            }
+          }, 200);
+        }
+      }
+
+      function reload() {
+        if (gameState !== 'playing' || reloadCooldown > 0) return;
+        ammo = maxAmmo; reloadCooldown = 1500;
+        floatingTexts.push({ x: W / 2, y: H / 2, text: '装弹完成！', color: '#68d391', size: 22, life: 800, maxLife: 800 });
+      }
+
+      function spawnHitParticles(x, y, r, color) {
+        for (let i = 0; i < 20; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const spd = 2 + Math.random() * 6;
+          particles.push({
+            x, y, vx: Math.cos(angle) * spd, vy: Math.sin(angle) * spd - 2,
+            size: 2 + Math.random() * 4, color, life: 500 + Math.random() * 300, maxLife: 800,
+          });
+        }
+      }
+
+      function spawnMissParticles(x, y) {
+        for (let i = 0; i < 8; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const spd = 1 + Math.random() * 2;
+          particles.push({
+            x, y, vx: Math.cos(angle) * spd, vy: Math.sin(angle) * spd,
+            size: 1 + Math.random() * 2, color: '#718096', life: 300 + Math.random() * 200, maxLife: 500,
+          });
+        }
+      }
+
+      function endLevel() {
+        gameState = 'levelEnd';
+        cancelAnimationFrame(animId);
+        totalScore += score;
+        const accuracy = levelShots > 0 ? Math.round(levelHits / levelShots * 100) : 0;
+
+        floatingTexts = []; particles = [];
+        draw();
+
+        const lv = LEVELS[level];
+        document.getElementById('levelTitle').textContent = '第 ' + (level + 1) + ' 关完成！';
+        document.getElementById('levelInfo').textContent = lv.name;
+        document.getElementById('endScore').textContent = '得分: ' + score + ' (总计: ' + totalScore + ')';
+        document.getElementById('endAccuracy').textContent = '命中率: ' + accuracy + '% (' + levelHits + '/' + levelShots + ')';
+        document.getElementById('endHits').textContent = '最高连击: ×' + maxCombo;
+
+        const starCount = accuracy >= 90 ? 3 : accuracy >= 70 ? 2 : accuracy >= 50 ? 1 : 0;
+        document.getElementById('endStars').textContent = '⭐'.repeat(starCount) + '☆'.repeat(3 - starCount);
+
+        if (level < LEVELS.length - 1) {
+          document.getElementById('endTitle').textContent = accuracy >= 50 ? '🎖️ 过关！' : '💀 未达标';
+          document.getElementById('restartBtn').textContent = accuracy >= 50 ? '下一关' : '重试本关';
+        } else {
+          document.getElementById('endTitle').textContent = accuracy >= 50 ? '🏆 全部通关！' : '💀 最终关失败';
+          document.getElementById('restartBtn').textContent = '重新开始';
+        }
+        document.getElementById('endScreen').style.display = 'flex';
+
+        const duration = LEVELS[level].time;
+        try { parent.postMessage({ type: 'game_end', payload: { slug: 'shooting-range', score: totalScore, duration } }, '*'); } catch (_) {}
+      }
+
+      function nextAction() {
+        const accuracy = levelShots > 0 ? levelHits / levelShots * 100 : 0;
+        document.getElementById('endScreen').style.display = 'none';
+        if (accuracy >= 50 && level < LEVELS.length - 1) {
+          level++;
+          showLevelScreen();
+        } else if (accuracy < 50) {
+          showLevelScreen();
+        } else {
+          init();
+        }
+      }
+
+      canvas.addEventListener('pointermove', (e) => { mouseX = e.clientX; mouseY = e.clientY; });
+      canvas.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        shoot(e.clientX, e.clientY);
+      });
+
+      let lastTap = 0;
+      canvas.addEventListener('touchend', (e) => {
+        const now = Date.now();
+        if (now - lastTap < 300) reload();
+        lastTap = now;
+      });
+
+      document.addEventListener('keydown', (e) => { if (e.key === 'r' || e.key === 'R') reload(); });
+
+      document.getElementById('startBtn').addEventListener('click', () => {
+        document.getElementById('startScreen').style.display = 'none';
+        showLevelScreen();
+      });
+      document.getElementById('levelStartBtn').addEventListener('click', startLevel);
+      document.getElementById('restartBtn').addEventListener('click', nextAction);
+      window.addEventListener('resize', resize);
+      init();
+    </script>
+  </body>
+</html>

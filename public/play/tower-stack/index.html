@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+    <title>堆叠塔</title>
+    <style>
+      * { box-sizing: border-box; touch-action: none; -webkit-tap-highlight-color: transparent; user-select: none; }
+      html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #1a1a2e; color: #e2e8f0; font-family: system-ui, sans-serif; }
+      body { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+      h1 { margin: 0 0 4px; font-size: 22px; color: #e9d8fd; z-index: 2; }
+      #info { font-size: 18px; font-weight: 700; color: #fbd38d; z-index: 2; margin-bottom: 4px; }
+      #canvas { background: #16213e; border-radius: 8px; }
+      .hint { font-size: 12px; opacity: 0.5; z-index: 2; margin-top: 4px; }
+      #overlay { position: fixed; inset: 0; background: rgba(26,26,46,0.92); display: none; align-items: center; justify-content: center; flex-direction: column; gap: 14px; z-index: 10; }
+      #overlay.show { display: flex; }
+      #overlay .title { font-size: 42px; font-weight: 700; }
+      #overlay .win { color: #48bb78; } #overlay .lose { color: #fc8181; }
+      button { background: rgba(255,255,255,0.12); color: #e2e8f0; border: 0; padding: 10px 24px; border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 15px; }
+      button:hover { background: rgba(255,255,255,0.2); }
+    </style>
+  </head>
+  <body>
+    <h1>🏗️ 堆叠塔</h1>
+    <div id="info">层数: 0</div>
+    <canvas id="canvas" width="300" height="500"></canvas>
+    <div class="hint">点击 / 触屏落下方块</div>
+    <div id="overlay">
+      <div id="endTitle" class="title"></div>
+      <div id="endMsg" style="font-size:20px"></div>
+      <button id="restart">再来一局</button>
+    </div>
+
+    <script>
+      const canvas = document.getElementById('canvas');
+      const ctx = canvas.getContext('2d');
+      const W = canvas.width, H = canvas.height;
+      const BLOCK_H = 25;
+      const COLORS = ['#e53e3e','#dd6b20','#d69e2e','#38a169','#319795','#3182ce','#805ad5','#d53f8c'];
+
+      let blocks, current, dir, speed, gameOver, perfectCount, startTime;
+
+      function init() {
+        blocks = [{ x: (W - 150) / 2, w: 150, color: COLORS[0] }];
+        gameOver = false; perfectCount = 0;
+        document.getElementById('overlay').classList.remove('show');
+        spawnBlock();
+        startTime = Date.now();
+        try { parent.postMessage({ type: 'game_start', payload: { slug: 'tower-stack' } }, '*'); } catch (_) {}
+        requestAnimationFrame(loop);
+      }
+
+      function spawnBlock() {
+        const prev = blocks[blocks.length - 1];
+        current = { x: -prev.w, y: H - (blocks.length + 1) * BLOCK_H, w: prev.w, color: COLORS[blocks.length % COLORS.length] };
+        dir = 1;
+        speed = 1.5 + blocks.length * 0.15;
+      }
+
+      function loop() {
+        if (gameOver) return;
+        current.x += dir * speed;
+        if (current.x + current.w > W + 50 || current.x < -50) dir *= -1;
+        draw();
+        requestAnimationFrame(loop);
+      }
+
+      function draw() {
+        ctx.clearRect(0, 0, W, H);
+        for (let i = 0; i < blocks.length; i++) {
+          const b = blocks[i];
+          ctx.fillStyle = b.color;
+          const y = H - (i + 1) * BLOCK_H;
+          ctx.fillRect(b.x, y, b.w, BLOCK_H - 1);
+        }
+        if (current) {
+          ctx.fillStyle = current.color;
+          ctx.globalAlpha = 0.85;
+          ctx.fillRect(current.x, current.y, current.w, BLOCK_H - 1);
+          ctx.globalAlpha = 1;
+        }
+        document.getElementById('info').textContent = '层数: ' + (blocks.length - 1);
+      }
+
+      function drop() {
+        if (gameOver || !current) return;
+        // 方块还没进入可视区域时忽略点击
+        if (current.x + current.w < 0 || current.x > W) return;
+        const prev = blocks[blocks.length - 1];
+        const overlap = Math.min(current.x + current.w, prev.x + prev.w) - Math.max(current.x, prev.x);
+        if (overlap <= 0) { endGame(); return; }
+        const isPerfect = Math.abs(current.x - prev.x) < 4;
+        if (isPerfect) { perfectCount++; }
+        blocks.push({ x: Math.max(current.x, prev.x), w: overlap, color: current.color });
+        if (blocks.length * BLOCK_H >= H - 20) { endGame(); return; }
+        spawnBlock();
+      }
+
+      function endGame() {
+        gameOver = true;
+        const layers = blocks.length - 1;
+        const score = layers * 10 + perfectCount * 25;
+        const endTitle = document.getElementById('endTitle');
+        endTitle.className = 'title ' + (layers >= 20 ? 'win' : 'lose');
+        endTitle.textContent = layers >= 20 ? '🎉 太厉害了！' : '💥 塔倒了！';
+        document.getElementById('endMsg').textContent = layers + ' 层 · ' + score + ' 分 · 完美 ' + perfectCount + ' 次';
+        document.getElementById('overlay').classList.add('show');
+        const duration = Math.round((Date.now() - startTime) / 1000);
+        try { parent.postMessage({ type: 'game_end', payload: { slug: 'tower-stack', score, duration } }, '*'); } catch (_) {}
+      }
+
+      canvas.addEventListener('pointerdown', (e) => { e.preventDefault(); drop(); });
+      document.getElementById('restart').addEventListener('click', init);
+      init();
+    </script>
+  </body>
+</html>

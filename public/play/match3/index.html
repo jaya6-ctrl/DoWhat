@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+    <title>消消乐</title>
+    <style>
+      * { box-sizing: border-box; touch-action: none; -webkit-tap-highlight-color: transparent; user-select: none; }
+      html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #1a1a2e; color: #e2e8f0; font-family: system-ui, sans-serif; }
+      body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 8px; }
+      h1 { margin: 0; font-size: 24px; }
+      #info { font-size: 18px; font-weight: 700; }
+      #canvas { border-radius: 8px; background: #16213e; }
+      .hint { font-size: 12px; opacity: 0.5; }
+      #overlay { position: fixed; inset: 0; background: rgba(26,26,46,0.92); display: none; align-items: center; justify-content: center; flex-direction: column; gap: 14px; z-index: 10; }
+      #overlay.show { display: flex; }
+      #overlay .title { font-size: 42px; font-weight: 700; color: #fbd38d; }
+      button { background: rgba(255,255,255,0.12); color: #e2e8f0; border: 0; padding: 10px 24px; border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 15px; }
+      button:hover { background: rgba(255,255,255,0.2); }
+    </style>
+  </head>
+  <body>
+    <h1>✨ 消消乐</h1>
+    <div id="info">得分: 0</div>
+    <canvas id="canvas"></canvas>
+    <div class="hint">点击选中，再点击相邻宝石交换 · 三个相同消除</div>
+    <div id="overlay">
+      <div class="title">⏰ 游戏结束</div>
+      <div id="endMsg" style="font-size:20px"></div>
+      <button id="restart">再来一局</button>
+    </div>
+
+    <script>
+      const canvas = document.getElementById('canvas');
+      const ctx = canvas.getContext('2d');
+      const ROWS = 8, COLS = 8, TYPES = 6;
+      const GEM_COLORS = ['#e53e3e','#d69e2e','#38a169','#3182ce','#805ad5','#ed64a6'];
+      const GEM_ICONS = ['🔴','🟡','🟢','🔵','🟣','🩷'];
+
+      let CELL, PAD, grid, selected, score, movesLeft, animating, startTime;
+      let animState = null;
+
+      function resize() {
+        const maxW = Math.min(window.innerWidth - 16, 400);
+        CELL = Math.floor(maxW / COLS);
+        PAD = Math.floor(CELL * 0.12);
+        canvas.width = COLS * CELL;
+        canvas.height = ROWS * CELL;
+      }
+
+      function init() {
+        resize(); score = 0; movesLeft = 30; selected = null; animating = false; animState = null;
+        document.getElementById('overlay').classList.remove('show');
+        do { grid = generateGrid(); } while (findMatches().length > 0);
+        updateInfo(); draw();
+        startTime = Date.now();
+        try { parent.postMessage({ type: 'game_start', payload: { slug: 'match3' } }, '*'); } catch (_) {}
+      }
+
+      function generateGrid() {
+        const g = [];
+        for (let r = 0; r < ROWS; r++) {
+          g[r] = [];
+          for (let c = 0; c < COLS; c++) {
+            let t;
+            do { t = Math.floor(Math.random() * TYPES); } while (
+              (c >= 2 && g[r][c-1] === t && g[r][c-2] === t) ||
+              (r >= 2 && g[r-1][c] === t && g[r-2][c] === t)
+            );
+            g[r][c] = t;
+          }
+        }
+        return g;
+      }
+
+      function findMatches() {
+        const matched = new Set();
+        for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+          const t = grid[r][c]; if (t < 0) continue;
+          if (c + 2 < COLS && grid[r][c+1] === t && grid[r][c+2] === t) {
+            matched.add(r+','+c); matched.add(r+','+(c+1)); matched.add(r+','+(c+2));
+          }
+          if (r + 2 < ROWS && grid[r+1][c] === t && grid[r+2][c] === t) {
+            matched.add(r+','+c); matched.add((r+1)+','+c); matched.add((r+2)+','+c);
+          }
+        }
+        return [...matched].map(s => s.split(',').map(Number));
+      }
+
+      function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+          const x = c * CELL, y = r * CELL;
+          ctx.fillStyle = (r + c) % 2 === 0 ? '#1e2a4a' : '#1a2340';
+          ctx.fillRect(x, y, CELL, CELL);
+          const t = grid[r][c];
+          if (t >= 0 && t < TYPES) drawGem(x + PAD, y + PAD, CELL - PAD * 2, t);
+          if (selected && selected[0] === r && selected[1] === c) {
+            ctx.strokeStyle = '#fbd38d';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(x + 2, y + 2, CELL - 4, CELL - 4);
+          }
+        }
+      }
+
+      function drawGem(x, y, size, type) {
+        const cx = x + size / 2, cy = y + size / 2, rad = size / 2 - 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+        const grad = ctx.createRadialGradient(cx - rad * 0.3, cy - rad * 0.3, rad * 0.1, cx, cy, rad);
+        const base = GEM_COLORS[type];
+        grad.addColorStop(0, lighten(base, 60));
+        grad.addColorStop(0.7, base);
+        grad.addColorStop(1, darken(base, 30));
+        ctx.fillStyle = grad;
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(cx - rad * 0.25, cy - rad * 0.25, rad * 0.2, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,255,255,0.35)';
+        ctx.fill();
+      }
+
+      function lighten(hex, pct) {
+        const num = parseInt(hex.slice(1), 16);
+        let r = (num >> 16) + Math.round(255 * pct / 100);
+        let g = ((num >> 8) & 0xff) + Math.round(255 * pct / 100);
+        let b = (num & 0xff) + Math.round(255 * pct / 100);
+        r = Math.min(r, 255); g = Math.min(g, 255); b = Math.min(b, 255);
+        return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+      }
+
+      function darken(hex, pct) {
+        const num = parseInt(hex.slice(1), 16);
+        let r = (num >> 16) - Math.round(255 * pct / 100);
+        let g = ((num >> 8) & 0xff) - Math.round(255 * pct / 100);
+        let b = (num & 0xff) - Math.round(255 * pct / 100);
+        r = Math.max(r, 0); g = Math.max(g, 0); b = Math.max(b, 0);
+        return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+      }
+
+      function handleClick(e) {
+        if (animating) return;
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width, scaleY = canvas.height / rect.height;
+        const c = Math.floor((e.clientX - rect.left) * scaleX / CELL);
+        const r = Math.floor((e.clientY - rect.top) * scaleY / CELL);
+        if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return;
+        if (!selected) { selected = [r, c]; draw(); return; }
+        const [sr, sc] = selected;
+        if (sr === r && sc === c) { selected = null; draw(); return; }
+        if (Math.abs(sr - r) + Math.abs(sc - c) !== 1) { selected = [r, c]; draw(); return; }
+        trySwap(sr, sc, r, c);
+        selected = null;
+      }
+
+      async function trySwap(r1, c1, r2, c2) {
+        animating = true;
+        [grid[r1][c1], grid[r2][c2]] = [grid[r2][c2], grid[r1][c1]];
+        draw();
+        const matches = findMatches();
+        if (matches.length === 0) {
+          await sleep(200);
+          [grid[r1][c1], grid[r2][c2]] = [grid[r2][c2], grid[r1][c1]];
+          draw(); animating = false; return;
+        }
+        movesLeft--; updateInfo();
+        await processMatches();
+        animating = false;
+        if (movesLeft <= 0) endGame();
+      }
+
+      async function processMatches() {
+        let matches = findMatches();
+        while (matches.length > 0) {
+          score += matches.length * 10;
+          updateInfo();
+          for (const [r, c] of matches) grid[r][c] = -1;
+          draw(); await sleep(250);
+          for (let c = 0; c < COLS; c++) {
+            let write = ROWS - 1;
+            for (let r = ROWS - 1; r >= 0; r--) { if (grid[r][c] >= 0) { grid[write][c] = grid[r][c]; if (write !== r) grid[r][c] = -1; write--; } }
+            for (let r = write; r >= 0; r--) grid[r][c] = Math.floor(Math.random() * TYPES);
+          }
+          draw(); await sleep(250);
+          matches = findMatches();
+        }
+      }
+
+      function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+      function updateInfo() { document.getElementById('info').textContent = '得分: ' + score + '  |  剩余步数: ' + movesLeft; }
+
+      function endGame() {
+        const duration = Math.round((Date.now() - startTime) / 1000);
+        document.getElementById('endMsg').textContent = '得分：' + score + ' · 用了 30 步';
+        document.getElementById('overlay').classList.add('show');
+        try { parent.postMessage({ type: 'game_end', payload: { slug: 'match3', score, duration } }, '*'); } catch (_) {}
+      }
+
+      canvas.addEventListener('pointerdown', (e) => { e.preventDefault(); handleClick(e); });
+      document.getElementById('restart').addEventListener('click', init);
+      window.addEventListener('resize', () => { resize(); draw(); });
+      init();
+    </script>
+  </body>
+</html>

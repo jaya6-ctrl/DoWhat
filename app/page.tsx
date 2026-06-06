@@ -5,38 +5,6 @@ import { getCategories, getCategoriesWithTopGames } from "@/lib/services/categor
 
 export const revalidate = 60;
 
-type Banner = {
-  href: string;
-  title: string;
-  subtitle: string;
-  gradient: string;
-  decoration: "fire" | "puzzle" | "trophy";
-};
-
-const BANNERS: Banner[] = [
-  {
-    href: "/games?sort=hot",
-    title: "热门小游戏",
-    subtitle: "免下载，点开即玩",
-    gradient: "from-orange-400 via-pink-400 to-purple-500",
-    decoration: "fire",
-  },
-  {
-    href: "/games?category=puzzle",
-    title: "益智解谜推荐",
-    subtitle: "动动脑子，停不下来",
-    gradient: "from-sky-400 via-blue-500 to-indigo-600",
-    decoration: "puzzle",
-  },
-  {
-    href: "/rank",
-    title: "本周榜单",
-    subtitle: "看看大家都在玩什么",
-    gradient: "from-emerald-400 via-teal-500 to-cyan-600",
-    decoration: "trophy",
-  },
-];
-
 export default async function HomePage() {
   const [hot, latest, categories, categoriesWithGames] = await Promise.all([
     getHotGames(12),
@@ -45,93 +13,197 @@ export default async function HomePage() {
     getCategoriesWithTopGames(6),
   ]);
 
-  return (
-    <div className="mx-auto max-w-7xl space-y-10 px-4 py-6">
-      {/* Banner */}
-      <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
-        {BANNERS.map((b, i) => (
-          <Link
-            key={b.href}
-            href={b.href}
-            className={`group relative flex aspect-[5/2] items-center overflow-hidden rounded-2xl bg-gradient-to-br ${b.gradient} p-6 text-white shadow-sm transition hover:shadow-xl md:aspect-[3/2] ${i === 0 ? "md:col-span-2 md:aspect-[5/2]" : ""}`}
-          >
-            <BannerDecoration kind={b.decoration} large={i === 0} />
-            <div className="relative z-10">
-              <div className="text-xl font-bold drop-shadow-sm md:text-2xl">{b.title}</div>
-              <div className="mt-1 text-sm opacity-90">{b.subtitle}</div>
-              <div className="mt-3 inline-flex items-center gap-1 rounded-full bg-white/20 px-3 py-1 text-xs font-medium backdrop-blur-sm transition group-hover:bg-white/30">
-                立即开玩
-                <span className="transition group-hover:translate-x-0.5">→</span>
-              </div>
-            </div>
-          </Link>
-        ))}
-      </section>
+  const totalGames = new Set([...hot, ...latest].map((g) => g.id)).size;
 
-      {/* 分类入口 */}
-      <Section title="游戏分类">
-        <div className="grid grid-cols-4 gap-3 md:grid-cols-8">
-          {categories.map((c) => (
-            <Link
-              key={c.slug}
-              href={`/games?category=${c.slug}`}
-              className="flex flex-col items-center gap-2 rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] py-4 transition hover:border-[color:var(--color-primary)]"
-            >
-              <span className="text-3xl">{c.icon ?? "🎮"}</span>
-              <span className="text-sm">{c.name}</span>
-              <span className="text-xs text-[color:var(--color-muted)]">{c.gameCount} 款</span>
-            </Link>
+  return (
+    <div className="min-h-screen">
+      {/* ── 像素 Hero ── */}
+      <section className="relative overflow-hidden border-b-2 border-[color:var(--color-border)] bg-[#0a0a1a] px-4 py-16 md:py-20">
+        {/* 星空背景 */}
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          {Array.from({ length: 40 }).map((_, i) => (
+            <div
+              key={i}
+              className="absolute bg-white"
+              style={{
+                width: (i % 3 === 0 ? 2 : 1) + 'px',
+                height: (i % 3 === 0 ? 2 : 1) + 'px',
+                left: ((i * 37 + 13) % 100) + '%',
+                top: ((i * 23 + 7) % 80) + '%',
+                opacity: 0.2 + (i % 5) * 0.15,
+                animation: `star-twinkle ${2 + (i % 3)}s ${i * 0.3}s step-end infinite`,
+              }}
+            />
           ))}
         </div>
-      </Section>
 
-      {/* 热门游戏 */}
-      {hot.length > 0 && (
-        <Section title="热门游戏" href="/rank">
-          <GameGrid games={hot} priorityCount={6} />
-        </Section>
-      )}
+        {/* 像素地面 */}
+        <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-8" style={{ background: 'linear-gradient(0deg, #1a3a0a 0%, #2d5a18 50%, transparent 100%)' }} />
+        {/* 像素草地 */}
+        <div className="pointer-events-none absolute bottom-6 left-0 right-0 flex">
+          {Array.from({ length: 60 }).map((_, i) => (
+            <div key={i} className="shrink-0" style={{ width: '8px', height: (4 + (i % 3) * 2) + 'px', background: i % 2 === 0 ? '#3d7a2e' : '#2d6a1e' }} />
+          ))}
+        </div>
 
-      {/* 最新上架 */}
-      {latest.length > 0 && (
-        <Section title="最新上架" href="/games?sort=new">
-          <GameGrid games={latest} />
-        </Section>
-      )}
+        {/* 像素小人走路 */}
+        <div className="pixel-walker" style={{ animationDelay: '0s' }}>
+          <PixelChar color="#f0c040" />
+        </div>
+        <div className="pixel-walker" style={{ animationDelay: '-10s', bottom: '8px' }}>
+          <PixelChar color="#60a5fa" />
+        </div>
 
-      {/* 全部分类 — 每个分类前 6 款 */}
-      {categoriesWithGames.map((c) => (
-        <Section
-          key={c.slug}
-          title={`${c.icon ?? ""} ${c.name}`}
-          href={`/games?category=${c.slug}`}
-        >
-          <GameGrid games={c.games} />
-        </Section>
-      ))}
+        <div className="relative z-10 mx-auto max-w-3xl text-center">
+          {/* 像素 Logo */}
+          <div className="mb-4 flex justify-center">
+            <div className="flex items-center gap-1">
+              {['#e53e3e','#f0c040','#48bb78','#3182ce','#805ad5'].map((c, i) => (
+                <div key={i} className="h-3 w-3" style={{ background: c, animation: `pixel-bounce 0.6s ${i * 0.1}s step-end infinite` }} />
+              ))}
+            </div>
+          </div>
+
+          <h1
+            className="mb-2 text-2xl leading-relaxed text-[color:var(--color-primary)] md:text-3xl"
+            style={{ fontFamily: 'var(--font-pixel)', lineHeight: '1.8' }}
+          >
+            DOWHAT
+          </h1>
+          <p
+            className="mb-1 text-sm text-[color:var(--color-muted)]"
+            style={{ fontFamily: 'var(--font-pixel)', fontSize: '10px' }}
+          >
+            FREE H5 GAMES - NO DOWNLOAD
+          </p>
+          <p className="mb-6 text-xs text-[color:var(--color-muted)]/60">
+            免费 H5 小游戏 · 免下载 · 即点即玩
+          </p>
+
+          {/* 搜索栏 */}
+          <form action="/search" className="mx-auto mb-8 max-w-lg">
+            <div className="relative">
+              <input
+                name="q"
+                type="search"
+                placeholder="搜索游戏..."
+                className="pixel-search h-10 w-full border-2 border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 text-sm text-[color:var(--color-fg)] placeholder-[color:var(--color-muted)] outline-none transition-colors focus:border-[color:var(--color-primary)]"
+              />
+              <button
+                type="submit"
+                className="absolute right-0 top-0 flex h-10 w-10 items-center justify-center bg-[color:var(--color-primary)] text-[#0f0f23] transition-transform hover:brightness-110"
+                style={{ boxShadow: '2px 0 0 rgba(0,0,0,0.3)' }}
+              >
+                <span style={{ fontFamily: 'var(--font-pixel)', fontSize: '12px' }}>GO</span>
+              </button>
+            </div>
+          </form>
+
+          {/* 统计 */}
+          <div className="flex items-center justify-center gap-6" style={{ fontFamily: 'var(--font-pixel)', fontSize: '9px' }}>
+            <span className="text-[color:var(--color-primary)]">{totalGames} GAMES</span>
+            <span className="text-[color:var(--color-muted)]">|</span>
+            <span className="text-[color:var(--color-fg)]">{categories.length} TYPES</span>
+            <span className="text-[color:var(--color-muted)]">|</span>
+            <span className="text-green-400">FREE</span>
+          </div>
+
+          {/* PRESS START 闪烁 */}
+          <div
+            className="pixel-blink mt-8 text-[color:var(--color-primary)]"
+            style={{ fontFamily: 'var(--font-pixel)', fontSize: '11px' }}
+          >
+            ▼ SCROLL DOWN ▼
+          </div>
+        </div>
+      </section>
+
+      {/* ── 分类横向滑动栏 ── */}
+      <section className="relative z-10 -mt-4 px-4">
+        <div className="mx-auto max-w-7xl">
+          <div className="hide-scrollbar flex gap-2 overflow-x-auto pb-2">
+            {categories.map((c) => (
+              <Link
+                key={c.slug}
+                href={`/games?category=${c.slug}`}
+                className="flex shrink-0 items-center gap-2 border-2 border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 py-2 transition-all hover:border-[color:var(--color-primary)] hover:bg-[color:var(--color-primary)]/10"
+                style={{ boxShadow: '2px 2px 0 rgba(0,0,0,0.3)' }}
+              >
+                <span className="text-base">{c.icon ?? "🎮"}</span>
+                <span style={{ fontFamily: 'var(--font-pixel)', fontSize: '9px' }}>{c.name}</span>
+                <span
+                  className="bg-[color:var(--color-primary)]/20 px-1.5 py-0.5 text-[color:var(--color-primary)]"
+                  style={{ fontFamily: 'var(--font-pixel)', fontSize: '8px' }}
+                >
+                  {c.gameCount}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── 游戏列表 ── */}
+      <div className="mx-auto max-w-7xl space-y-10 px-4 py-8">
+        {hot.length > 0 && (
+          <Section title="HOT" titleCn="热门游戏" href="/rank">
+            <GameGrid games={hot} priorityCount={6} />
+          </Section>
+        )}
+
+        {latest.length > 0 && (
+          <Section title="NEW" titleCn="最新上架" href="/games?sort=new">
+            <GameGrid games={latest} />
+          </Section>
+        )}
+
+        {categoriesWithGames.map((c) => (
+          <Section key={c.slug} title={`${c.icon ?? ""} ${c.name}`} href={`/games?category=${c.slug}`}>
+            <GameGrid games={c.games} />
+          </Section>
+        ))}
+      </div>
     </div>
   );
 }
 
-function Section({
-  title,
-  href,
-  children,
-}: {
-  title: string;
-  href?: string;
-  children: React.ReactNode;
-}) {
+/* ── 像素小人 SVG ── */
+function PixelChar({ color }: { color: string }) {
+  return (
+    <svg width="16" height="20" viewBox="0 0 16 20" style={{ imageRendering: 'pixelated' }}>
+      {/* 头 */}
+      <rect x="4" y="0" width="8" height="8" fill={color} />
+      {/* 眼睛 */}
+      <rect x="5" y="2" width="2" height="2" fill="#0f0f23" />
+      <rect x="9" y="2" width="2" height="2" fill="#0f0f23" />
+      {/* 身体 */}
+      <rect x="4" y="8" width="8" height="6" fill={color} opacity="0.8" />
+      {/* 腿 - 交替动画用两组 */}
+      <rect x="4" y="14" width="3" height="4" fill={color} opacity="0.7" />
+      <rect x="9" y="14" width="3" height="6" fill={color} opacity="0.7" />
+      {/* 手臂 */}
+      <rect x="1" y="9" width="3" height="2" fill={color} opacity="0.6" />
+      <rect x="12" y="9" width="3" height="2" fill={color} opacity="0.6" />
+    </svg>
+  );
+}
+
+/* ── Section ── */
+function Section({ title, titleCn, href, children }: { title: string; titleCn?: string; href?: string; children: React.ReactNode }) {
   return (
     <section className="space-y-3">
-      <div className="flex items-baseline justify-between">
-        <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
+      <div className="flex items-baseline justify-between border-b-2 border-[color:var(--color-border)] pb-2">
+        <div className="flex items-baseline gap-2">
+          <h2 style={{ fontFamily: 'var(--font-pixel)', fontSize: '13px', color: 'var(--color-primary)' }}>{title}</h2>
+          {titleCn && <span className="text-xs text-[color:var(--color-muted)]">{titleCn}</span>}
+        </div>
         {href && (
           <Link
             href={href}
-            className="text-sm text-[color:var(--color-muted)] hover:text-[color:var(--color-primary)]"
+            className="flex items-center gap-1 text-[color:var(--color-primary)] transition-colors hover:text-[color:var(--color-primary-hover)]"
+            style={{ fontFamily: 'var(--font-pixel)', fontSize: '9px' }}
           >
-            查看全部 →
+            MORE →
           </Link>
         )}
       </div>
@@ -140,100 +212,13 @@ function Section({
   );
 }
 
-function GameGrid({
-  games,
-  priorityCount = 0,
-}: {
-  games: Awaited<ReturnType<typeof getHotGames>>;
-  priorityCount?: number;
-}) {
+/* ── GameGrid ── */
+function GameGrid({ games, priorityCount = 0 }: { games: Awaited<ReturnType<typeof getHotGames>>; priorityCount?: number }) {
   return (
-    <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-6">
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
       {games.map((g, i) => (
         <GameCard key={g.id} game={g} priority={i < priorityCount} />
       ))}
     </div>
-  );
-}
-
-function BannerDecoration({ kind, large }: { kind: Banner["decoration"]; large: boolean }) {
-  return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden">
-      {/* soft glow blobs */}
-      <div className="absolute -top-12 -right-12 h-40 w-40 rounded-full bg-white/15 blur-2xl" />
-      <div className="absolute -bottom-16 -left-12 h-48 w-48 rounded-full bg-black/10 blur-2xl" />
-      {/* dot pattern */}
-      <svg
-        className="absolute inset-0 h-full w-full opacity-30"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <defs>
-          <pattern id={`dots-${kind}`} x="0" y="0" width="22" height="22" patternUnits="userSpaceOnUse">
-            <circle cx="2" cy="2" r="1" fill="white" />
-          </pattern>
-        </defs>
-        <rect width="100%" height="100%" fill={`url(#dots-${kind})`} />
-      </svg>
-      {/* kind-specific motif on the right */}
-      <div className={`absolute ${large ? "right-8 top-1/2 -translate-y-1/2" : "right-4 bottom-3"} text-white/85`}>
-        {kind === "fire" && <FireMotif size={large ? 110 : 72} />}
-        {kind === "puzzle" && <PuzzleMotif size={large ? 110 : 72} />}
-        {kind === "trophy" && <TrophyMotif size={large ? 110 : 72} />}
-      </div>
-    </div>
-  );
-}
-
-function FireMotif({ size }: { size: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 100 100" fill="none">
-      <path
-        d="M50 90c18 0 30-12 30-28 0-12-7-22-15-30 0 8-6 14-12 14 4-12-4-26-13-32 2 16-8 22-14 32-4 7-6 14-6 20 0 14 12 24 30 24Z"
-        fill="currentColor"
-        opacity=".95"
-      />
-      <path
-        d="M50 80c8 0 14-6 14-14 0-6-3-10-7-14-1 5-4 8-7 8 1-6-3-12-6-15 0 8-5 11-8 16-2 3-3 6-3 9 0 6 5 10 17 10Z"
-        fill="#fff"
-        opacity=".4"
-      />
-      {/* sparkles */}
-      <circle cx="14" cy="20" r="2" fill="#fff" opacity=".7" />
-      <circle cx="86" cy="30" r="1.5" fill="#fff" opacity=".7" />
-      <circle cx="22" cy="60" r="1.2" fill="#fff" opacity=".5" />
-    </svg>
-  );
-}
-
-function PuzzleMotif({ size }: { size: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 100 100" fill="none">
-      <g fill="currentColor" opacity=".95">
-        <path d="M10 20h22a6 6 0 0 0 12 0h22v22a6 6 0 0 1 0 12v22H44a6 6 0 0 0-12 0H10V54a6 6 0 0 0 0-12V20Z" />
-      </g>
-      <g fill="#fff" opacity=".35">
-        <path d="M16 26h20v20H16zM52 26h20v20H52zM52 56h20v18H52zM16 56h20v18H16z" />
-      </g>
-      <circle cx="14" cy="14" r="2" fill="#fff" opacity=".7" />
-      <circle cx="86" cy="84" r="1.6" fill="#fff" opacity=".6" />
-    </svg>
-  );
-}
-
-function TrophyMotif({ size }: { size: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 100 100" fill="none">
-      <path
-        d="M30 18h40v18c0 14-9 24-20 24S30 50 30 36V18Z"
-        fill="currentColor"
-        opacity=".95"
-      />
-      <path d="M30 24H18c0 12 6 18 14 18M70 24h12c0 12-6 18-14 18" stroke="currentColor" strokeWidth="5" strokeLinecap="round" />
-      <rect x="40" y="62" width="20" height="10" fill="currentColor" opacity=".95" />
-      <rect x="32" y="72" width="36" height="8" rx="2" fill="currentColor" opacity=".95" />
-      <path d="M44 30l4 8 8 1-6 5 2 8-8-4-8 4 2-8-6-5 8-1z" fill="#fff" opacity=".6" />
-      <circle cx="12" cy="16" r="2" fill="#fff" opacity=".7" />
-      <circle cx="88" cy="80" r="1.5" fill="#fff" opacity=".6" />
-    </svg>
   );
 }

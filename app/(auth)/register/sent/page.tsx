@@ -13,25 +13,32 @@ export default async function RegisterSentPage({
   const { email } = await searchParams;
   return (
     <>
-      <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">查收验证邮件</h1>
-        <p className="text-sm text-[color:var(--color-muted)]">
-          我们已经向 <strong>{email ?? "你的邮箱"}</strong> 发送了一封验证邮件。
-          请点击邮件里的链接完成验证，链接 24 小时内有效。
+      <header className="text-center">
+        <div className="mb-3 flex justify-center">
+          <span style={{ fontSize: '48px' }}>📧</span>
+        </div>
+        <h1 className="px text-[color:var(--color-primary)]">CHECK YOUR EMAIL</h1>
+        <p className="mt-2 px-sm text-[color:var(--color-muted)]">
+          我们已向 <strong className="text-[color:var(--color-fg)]">{email ?? "你的邮箱"}</strong> 发送了验证邮件
         </p>
       </header>
 
-      <div className="rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4 text-sm text-[color:var(--color-muted)]">
-        <p className="mb-1 font-medium text-[color:var(--color-fg)]">没收到邮件？</p>
-        <ul className="list-inside list-disc space-y-1">
-          <li>检查垃圾邮件 / 推广 / 订阅 等文件夹</li>
-          <li>本地开发可以打开 <a className="underline" href="http://localhost:8025" target="_blank" rel="noreferrer">Mailpit 收件箱</a></li>
+      <div className="border-2 border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4" style={{ boxShadow: '2px 2px 0 rgba(0,0,0,0.2)' }}>
+        <p className="mb-2 px-sm text-[color:var(--color-primary)]">没收到邮件？</p>
+        <ul className="space-y-1.5 px-xs text-[color:var(--color-muted)]">
+          <li>→ 检查垃圾邮件 / 推广 / 订阅等文件夹</li>
+          <li>→ 本地开发可打开 <a className="text-[color:var(--color-primary)] underline" href="http://localhost:8025" target="_blank" rel="noreferrer">Mailpit 收件箱</a></li>
+          <li>→ 链接 24 小时内有效</li>
         </ul>
       </div>
 
-      <footer className="text-sm text-[color:var(--color-muted)]">
-        <Link href="/login" className="text-[color:var(--color-fg)] hover:underline">
-          返回登录
+      <footer className="text-center">
+        <Link
+          href="/login"
+          className="text-[color:var(--color-primary)] transition-colors hover:text-[color:var(--color-primary-hover)]"
+          style={{ fontFamily: 'var(--font-pixel)', fontSize: '8px' }}
+        >
+          ◀ BACK TO LOGIN
         </Link>
       </footer>
     </>
