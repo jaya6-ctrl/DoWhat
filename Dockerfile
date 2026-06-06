@@ -22,6 +22,8 @@ ARG DATABASE_URL
 ENV DATABASE_URL=$DATABASE_URL
 RUN pnpm exec prisma generate
 RUN pnpm exec prisma migrate deploy
+# 写入初始数据(分类/标签/游戏)。seed 脚本使用 upsert,幂等,可重复执行。
+RUN pnpm db:seed
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm build
 
