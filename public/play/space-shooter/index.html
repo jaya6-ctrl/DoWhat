@@ -1,0 +1,708 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+    <title>太空射击</title>
+    <style>
+      * { box-sizing: border-box; touch-action: none; -webkit-tap-highlight-color: transparent; user-select: none; }
+      html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #050510; }
+      body { display: flex; align-items: center; justify-content: center; }
+      #c { display: block; }
+    </style>
+  </head>
+  <body>
+    <canvas id="c"></canvas>
+    <script>
+    const cv = document.getElementById('c'), cx = cv.getContext('2d');
+    let W, H;
+    function resize() { W = cv.width = window.innerWidth; H = cv.height = window.innerHeight; }
+    window.addEventListener('resize', resize); resize();
+
+    // ── 常量 ──
+    const P = { w: 28, h: 38, speed: 5.5, hp: 100, shieldMax: 50, bombMax: 3, inv: 1500 };
+    const ENEMY_T = [
+      { name:'scout',   w:20, hp:30,  spd:2,   score:100, color:'#ef4444', drop:0.08 },
+      { name:'fighter', w:26, hp:60,  spd:1.5, score:200, color:'#f97316', drop:0.12 },
+      { name:'tank',    w:34, hp:130, spd:0.8, score:350, color:'#a855f7', drop:0.2  },
+      { name:'speeder', w:18, hp:25,  spd:3.5, score:150, color:'#14b8a6', drop:0.06 },
+      { name:'bomber',  w:30, hp:85,  spd:1,   score:300, color:'#ec4899', drop:0.18 },
+    ];
+
+    // ── 状态 ──
+    let state='menu', paused=false, player, bullets, missiles, enemies, eBullets, pickups, particles, pops, stars, nebulae;
+    let score, hi=+(localStorage.getItem('ss-hi')||0), combo, comboT, wave, waveT, waveDly, spawnT, gt;
+    let shX, shY, shT, kills, shots, hits;
+    let ptrX=0, ptrY=0, ptrDown=false, keys={};
+
+    // ── 输入 ──
+    const GAME_KEYS=new Set(['arrowup','arrowdown','arrowleft','arrowright','w','a','s','d',' ','e','p']);
+    window.addEventListener('keydown', e => {
+      const k=e.key.toLowerCase();
+      if(GAME_KEYS.has(k))e.preventDefault();
+      keys[k]=true;
+      if((k===' ')&&state==='playing')fire();
+      if(k==='e'&&state==='playing')useBomb();
+      if(k==='p'&&state==='playing')paused=!paused;
+    });
+    window.addEventListener('keyup', e => keys[e.key.toLowerCase()]=false);
+    cv.addEventListener('pointermove', e => {ptrX=e.clientX;ptrY=e.clientY;});
+    cv.addEventListener('pointerdown', e => {
+      e.preventDefault();ptrDown=true;ptrX=e.clientX;ptrY=e.clientY;
+      if(state==='menu')startGame();
+      else if(state==='over')startGame();
+      else if(state==='playing')fire();
+    });
+    cv.addEventListener('pointerup', ()=>ptrDown=false);
+
+    // ── 星空 + 星云 ──
+    function initBg() {
+      stars=[]; nebulae=[];
+      for(let i=0;i<180;i++){
+        const l=Math.random()<0.5?0:Math.random()<0.7?1:2;
+        stars.push({x:Math.random()*W,y:Math.random()*H,s:[1,1.5,2.5][l],sp:[0.3,0.7,1.2][l],a:[0.2,0.4,0.7][l]});
+      }
+      for(let i=0;i<5;i++){
+        nebulae.push({x:Math.random()*W,y:Math.random()*H,r:80+Math.random()*120,color:['#1e1b4b','#172554','#1e1b4b','#0c1a3a','#1a0a2e'][i],a:0.15+Math.random()*0.1});
+      }
+    }
+    initBg();
+
+    function startGame() {
+      state='playing';paused=false;
+      player={x:W/2,y:H-80,hp:P.hp,mhp:P.hp,shield:0,bombs:P.bombMax,inv:0,wLv:0,cd:0,alive:true,thrust:0};
+      bullets=[];missiles=[];enemies=[];eBullets=[];pickups=[];particles=[];pops=[];
+      score=0;combo=0;comboT=0;wave=0;waveT=0;waveDly=180;spawnT=0;gt=0;
+      shX=0;shY=0;shT=0;kills=0;shots=0;hits=0;
+      try{parent.postMessage({type:'game_start',payload:{slug:'space-shooter'}},'*');}catch(_){}
+    }
+
+    // ── 射击 ──
+    function fire() {
+      if(player.cd>0||!player.alive)return;
+      const lv=player.wLv;
+      player.cd=lv>=3?80:lv>=2?100:lv>=1?120:150;shots++;
+      bullets.push({x:player.x,y:player.y-P.h/2,vx:0,vy:-10,w:4,h:18,dmg:25+lv*8});
+      if(lv>=1){
+        bullets.push({x:player.x-14,y:player.y-P.h/2+8,vx:-0.6,vy:-9.5,w:3,h:14,dmg:18});
+        bullets.push({x:player.x+14,y:player.y-P.h/2+8,vx:0.6,vy:-9.5,w:3,h:14,dmg:18});
+      }
+      if(lv>=2){
+        bullets.push({x:player.x-22,y:player.y-P.h/2+14,vx:-1.4,vy:-9,w:3,h:12,dmg:14});
+        bullets.push({x:player.x+22,y:player.y-P.h/2+14,vx:1.4,vy:-9,w:3,h:12,dmg:14});
+      }
+      if(lv>=3&&Math.random()<0.3){
+        const t=enemies.length?enemies.reduce((a,b)=>Math.hypot(a.x-player.x,a.y-player.y)<Math.hypot(b.x-player.x,b.y-player.y)?a:b):null;
+        missiles.push({x:player.x,y:player.y-P.h/2,vx:0,vy:-6,w:6,h:14,dmg:80,target:t,life:300});
+      }
+    }
+
+    function useBomb(){
+      if(player.bombs<=0||!player.alive)return;
+      player.bombs--;shT=600;
+      enemies.forEach(e=>{e.hp-=200;spawnExplosion(e.x,e.y,e.w,e.color,15);});
+      eBullets.length=0;
+      pops.push({x:W/2,y:H/2,text:'💥 全屏清除！',sz:32,col:'#fbbf24',life:80,ml:80});
+      for(let i=0;i<80;i++) particles.push({x:player.x,y:player.y,vx:(Math.random()-0.5)*14,vy:(Math.random()-0.5)*14,sz:2+Math.random()*5,col:['#fbbf24','#f97316','#ef4444','#fff'][~~(Math.random()*4)],life:40+Math.random()*30,ml:70});
+    }
+
+    // ── 敌人生成 ──
+    function spawnEnemy(){
+      const w=wave,pool=w<3?[0]:w<5?[0,1]:w<8?[0,1,3]:w<12?[0,1,2,3]:[0,1,2,3,4];
+      const t=ENEMY_T[pool[~~(Math.random()*pool.length)]];
+      const hm=1+w*0.12,sm=1+w*0.04;
+      enemies.push({x:t.w+Math.random()*(W-t.w*2),y:-t.w,vx:(Math.random()-0.5)*t.spd*sm,vy:t.spd*sm,
+        w:t.w,h:t.w,hp:t.hp*hm,mhp:t.hp*hm,spd:t.spd*sm,score:t.score,color:t.color,drop:t.drop,type:t.name,
+        cd:200+Math.random()*300,anim:0,zig:t.name==='speeder'?0:null});
+    }
+
+    function spawnBoss(){
+      const w=wave,hp=(800+w*300)*(1+w*0.1);
+      enemies.push({x:W/2,y:-70,vx:1,vy:0.5,w:70,h:70,hp,mhp:hp,spd:0.8,score:2000+w*500,color:'#dc2626',drop:1,type:'boss',
+        cd:80,anim:0,phase:0,phaseT:0,isBoss:true});
+      pops.push({x:W/2,y:H/3,text:'⚠️ BOSS 来袭！',sz:36,col:'#ef4444',life:120,ml:120});
+      shT=400;
+    }
+
+    // ── 波次 ──
+    function nextWave(){
+      wave++;waveT=0;
+      const isBoss=wave%5===0;
+      if(isBoss){spawnBoss();waveDly=0;}
+      else{const c=4+wave*2;for(let i=0;i<c;i++)setTimeout(()=>{if(state==='playing')spawnEnemy();},i*(400-Math.min(wave*20,250)));waveDly=60+wave*5;}
+      pops.push({x:W/2,y:H/2-30,text:isBoss?`第 ${wave} 波 - BOSS`:`第 ${wave} 波`,sz:28,col:'#93c5fd',life:90,ml:90});
+    }
+
+    function spawnExplosion(x,y,sz,col,n=20){
+      for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2,sp=1+Math.random()*6;particles.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,sz:1.5+Math.random()*3.5,col:i<n/2?col:'#fbbf24',life:25+Math.random()*25,ml:50});}
+      for(let i=0;i<5;i++) particles.push({x,y,vx:0,vy:0,sz:sz*(0.4+Math.random()*0.6),col:'#fff',life:6+Math.random()*8,ml:14,flash:true});
+      // 冲击波环
+      particles.push({x,y,vx:0,vy:0,sz:sz*0.3,col:'#fff',life:20,ml:20,ring:true,maxR:sz*2.5});
+    }
+
+    function dropPickup(x,y){
+      if(Math.random()>0.25)return;
+      const ts=['weapon','heal','shield','bomb'],ws=[0.35,0.3,0.2,0.15];
+      let r=Math.random(),a=0,tp=ts[0];
+      for(let i=0;i<ts.length;i++){a+=ws[i];if(r<a){tp=ts[i];break;}}
+      pickups.push({x,y,vy:1.5,type:tp,sz:14,anim:0});
+    }
+
+    // ── 更新 ──
+    function updatePlayer(dt){
+      if(!player.alive)return;
+      player.thrust+=dt*0.1;
+      let dx=0,dy=0;
+      if(keys['a']||keys['arrowleft'])dx=-1;if(keys['d']||keys['arrowright'])dx=1;
+      if(keys['w']||keys['arrowup'])dy=-1;if(keys['s']||keys['arrowdown'])dy=1;
+      const l=Math.hypot(dx,dy)||1;
+      player.x+=dx/l*P.speed*dt;player.y+=dy/l*P.speed*dt;
+      player.x=Math.max(P.w,Math.min(W-P.w,player.x));player.y=Math.max(P.w+60,Math.min(H-P.w,player.y));
+      if(player.inv>0)player.inv-=dt*16.67;if(player.cd>0)player.cd-=dt*16.67;
+      if(ptrDown&&player.cd<=0)fire();
+    }
+
+    function updateBullets(dt){
+      for(let i=bullets.length-1;i>=0;i--){
+        const b=bullets[i];b.x+=b.vx*dt;b.y+=b.vy*dt;
+        if(b.y<-20||b.x<-20||b.x>W+20){bullets.splice(i,1);continue;}
+        for(let j=enemies.length-1;j>=0;j--){
+          const e=enemies[j];
+          if(Math.abs(b.x-e.x)<(b.w+e.w)/2&&Math.abs(b.y-e.y)<(b.h+e.w)/2){
+            e.hp-=b.dmg;hits++;bullets.splice(i,1);
+            particles.push({x:b.x,y:b.y,vx:0,vy:0,sz:5,col:'#fff',life:4,ml:4,flash:true});
+            if(e.hp<=0)killEnemy(j);break;
+          }
+        }
+      }
+      for(let i=missiles.length-1;i>=0;i--){
+        const m=missiles[i];m.life--;
+        if(m.target&&enemies.includes(m.target)){
+          const dx=m.target.x-m.x,dy=m.target.y-m.y,d=Math.hypot(dx,dy)||1;
+          m.vx+=dx/d*0.06*dt;m.vy+=dy/d*0.06*dt;
+          const sp=Math.hypot(m.vx,m.vy);if(sp>6){m.vx*=6/sp;m.vy*=6/sp;}
+        }
+        m.x+=m.vx*dt;m.y+=m.vy*dt;
+        // 导弹尾迹
+        if(gt%2===0) particles.push({x:m.x,y:m.y+8,vx:(Math.random()-0.5)*0.5,vy:1+Math.random(),sz:2,col:'#f97316',life:15,ml:15});
+        if(m.life<=0||m.y<-30||m.y>H+30){missiles.splice(i,1);continue;}
+        for(let j=enemies.length-1;j>=0;j--){
+          const e=enemies[j];
+          if(Math.abs(m.x-e.x)<(m.w+e.w)/2&&Math.abs(m.y-e.y)<(m.h+e.w)/2){
+            e.hp-=m.dmg;missiles.splice(i,1);spawnExplosion(m.x,m.y,12,'#f97316',12);
+            if(e.hp<=0)killEnemy(j);break;
+          }
+        }
+      }
+    }
+
+    function killEnemy(j){
+      const e=enemies[j];spawnExplosion(e.x,e.y,e.w,e.color);combo++;comboT=120;
+      const m=Math.min(combo,10),earned=e.score*m;score+=earned;kills++;
+      pops.push({x:e.x,y:e.y-e.w,text:`+${earned}`+(m>1?` ×${m}`:''),sz:m>3?20:16,col:m>5?'#fbbf24':'#fff',life:50,ml:50});
+      if(e.drop>=1||Math.random()<e.drop)dropPickup(e.x,e.y);
+      enemies.splice(j,1);shT=Math.min(shT+80,300);
+    }
+
+    function updateEnemies(dt){
+      for(let i=enemies.length-1;i>=0;i--){
+        const e=enemies[i];e.anim+=dt*0.05;
+        if(e.isBoss){
+          e.phaseT+=dt;
+          if(e.y<80)e.y+=e.vy*dt;else e.x+=Math.sin(e.anim*2)*2;
+          e.x=Math.max(e.w,Math.min(W-e.w,e.x));
+          if(e.phaseT>180){e.phase=(e.phase+1)%3;e.phaseT=0;}
+          e.cd-=dt*16.67;
+          if(e.cd<=0){
+            e.cd=e.phase===0?200:e.phase===1?100:60;
+            const a=Math.atan2(player.y-e.y,player.x-e.x);
+            if(e.phase===0)eBullets.push({x:e.x,y:e.y+e.h/2,vx:Math.cos(a)*3,vy:Math.sin(a)*3,sz:6,col:'#f87171'});
+            else if(e.phase===1){for(let k=-2;k<=2;k++){const la=a+k*0.2;eBullets.push({x:e.x,y:e.y+e.h/2,vx:Math.cos(la)*3.5,vy:Math.sin(la)*3.5,sz:5,col:'#fb923c'});}}
+            else{for(let k=0;k<8;k++){const la=k*Math.PI/4;eBullets.push({x:e.x,y:e.y,vx:Math.cos(la)*2.5,vy:Math.sin(la)*2.5,sz:5,col:'#fbbf24'});}}
+          }
+        }else{
+          if(e.zig!==null){e.zig+=dt*0.08;e.x+=Math.sin(e.zig)*2;}
+          e.x+=e.vx*dt;e.y+=e.vy*dt;
+          if(e.x<e.w||e.x>W-e.w)e.vx*=-1;
+          e.x=Math.max(e.w,Math.min(W-e.w,e.x));
+          if(e.y>H+50){enemies.splice(i,1);continue;}
+          e.cd-=dt*16.67;
+          if(e.cd<=0&&e.y>50&&e.y<H*0.7){
+            e.cd=300+Math.random()*400;
+            const a=Math.atan2(player.y-e.y,player.x-e.x);
+            eBullets.push({x:e.x,y:e.y+e.w/2,vx:Math.cos(a)*2.5,vy:Math.sin(a)*2.5,sz:4,col:e.color});
+          }
+        }
+      }
+    }
+
+    function updateEBullets(dt){
+      for(let i=eBullets.length-1;i>=0;i--){
+        const b=eBullets[i];b.x+=b.vx*dt;b.y+=b.vy*dt;
+        if(b.y<-20||b.y>H+20||b.x<-20||b.x>W+20){eBullets.splice(i,1);continue;}
+        if(!player.alive||player.inv>0)continue;
+        if(Math.abs(b.x-player.x)<P.w*0.7&&Math.abs(b.y-player.y)<P.h*0.5){
+          eBullets.splice(i,1);let d=15+wave;
+          if(player.shield>0){const ab=Math.min(player.shield,d);player.shield-=ab;d-=ab;}
+          if(d>0)player.hp-=d;player.inv=200;shT=150;
+          spawnExplosion(player.x,player.y,8,'#60a5fa',8);
+          if(player.hp<=0)gameOver();
+        }
+      }
+    }
+
+    function updatePickups(dt){
+      for(let i=pickups.length-1;i>=0;i--){
+        const p=pickups[i];p.y+=p.vy*dt;p.anim+=dt*0.1;
+        if(p.y>H+20){pickups.splice(i,1);continue;}
+        if(Math.abs(p.x-player.x)<25&&Math.abs(p.y-player.y)<25&&player.alive){
+          if(p.type==='weapon'){player.wLv=Math.min(player.wLv+1,3);pops.push({x:player.x,y:player.y-30,text:'⬆ 武器升级！',sz:18,col:'#fbbf24',life:50,ml:50});}
+          else if(p.type==='heal'){player.hp=Math.min(player.hp+30,player.mhp);pops.push({x:player.x,y:player.y-30,text:'+30 HP',sz:18,col:'#4ade80',life:50,ml:50});}
+          else if(p.type==='shield'){player.shield=Math.min(player.shield+25,P.shieldMax);pops.push({x:player.x,y:player.y-30,text:'+25 护盾',sz:18,col:'#60a5fa',life:50,ml:50});}
+          else if(p.type==='bomb'){player.bombs=Math.min(player.bombs+1,P.bombMax);pops.push({x:player.x,y:player.y-30,text:'+1 炸弹',sz:18,col:'#f97316',life:50,ml:50});}
+          pickups.splice(i,1);
+        }
+      }
+    }
+
+    function updateParticles(dt){
+      for(let i=particles.length-1;i>=0;i--){
+        const p=particles[i];
+        if(p.ring){p.sz+=dt*2;if(p.life<=0)particles.splice(i,1);else p.life-=dt;continue;}
+        p.x+=p.vx*dt;p.y+=p.vy*dt;
+        if(!p.flash){p.vx*=0.97;p.vy*=0.97;p.vy+=0.02*dt;}
+        p.life-=dt;if(p.life<=0)particles.splice(i,1);
+      }
+      for(let i=pops.length-1;i>=0;i--){const t=pops[i];t.y-=0.8*dt;t.life-=dt;if(t.life<=0)pops.splice(i,1);}
+    }
+
+    function updateBg(dt){for(const s of stars){s.y+=s.sp*dt;if(s.y>H){s.y=-2;s.x=Math.random()*W;}}}
+
+    function updateShake(dt){
+      if(shT>0){shT-=dt*16.67;shX=(Math.random()-0.5)*6*(shT/600);shY=(Math.random()-0.5)*6*(shT/600);}
+      else{shX=0;shY=0;}
+    }
+
+    function gameOver(){
+      state='over';player.alive=false;spawnExplosion(player.x,player.y,P.w*2,'#60a5fa',50);
+      if(score>hi){hi=score;localStorage.setItem('ss-hi',hi);}
+      try{parent.postMessage({type:'game_end',payload:{slug:'space-shooter',score,duration:Math.round(gt/60)}},'*');}catch(_){}
+    }
+
+    // ── 主循环 ──
+    let lastT=0;
+    function loop(t){
+      requestAnimationFrame(loop);
+      if(!lastT){lastT=t;return;}
+      let dt=Math.min((t-lastT)/16.67,3);lastT=t;
+      if(state!=='playing'||paused){draw();return;}
+      gt+=dt;updatePlayer(dt);updateBullets(dt);updateEnemies(dt);updateEBullets(dt);updatePickups(dt);updateParticles(dt);updateBg(dt);updateShake(dt);
+      if(comboT>0)comboT-=dt;else combo=0;
+      if(enemies.length===0){waveT+=dt;if(waveT>=waveDly){waveT=0;nextWave();}}
+      if(wave%5!==0&&enemies.length<3+wave){spawnT+=dt;if(spawnT>60){spawnT=0;spawnEnemy();}}
+      draw();
+    }
+
+    // ════════════════════════════════════════
+    // ── 酷炫渲染系统 ──
+    // ════════════════════════════════════════
+
+    function draw(){
+      cx.save();cx.translate(shX,shY);
+      // 背景
+      cx.fillStyle='#050510';cx.fillRect(-10,-10,W+20,H+20);
+      // 星云
+      for(const n of nebulae){
+        const g=cx.createRadialGradient(n.x,n.y,0,n.x,n.y,n.r);
+        g.addColorStop(0,n.color);g.addColorStop(1,'transparent');
+        cx.globalAlpha=n.a;cx.fillStyle=g;cx.fillRect(n.x-n.r,n.y-n.r,n.r*2,n.r*2);
+      }
+      cx.globalAlpha=1;
+      // 星星
+      for(const s of stars){cx.globalAlpha=s.a;cx.fillStyle='#fff';cx.fillRect(s.x,s.y,s.s,s.s);}
+      cx.globalAlpha=1;
+
+      if(state==='menu'){drawMenu();cx.restore();return;}
+      if(state==='over'){drawGame();drawGameOver();cx.restore();return;}
+      drawGame();
+      if(paused){cx.fillStyle='rgba(0,0,0,0.5)';cx.fillRect(0,0,W,H);cx.textAlign='center';cx.fillStyle='#fff';cx.font='bold 36px system-ui';cx.fillText('⏸ 暂停',W/2,H/2);}
+      cx.restore();
+    }
+
+    function drawGame(){
+      // 拾取物 - 发光胶囊
+      for(const p of pickups){
+        const cols={weapon:'#fbbf24',heal:'#4ade80',shield:'#60a5fa',bomb:'#f97316'};
+        const icons={weapon:'⚡',heal:'❤️',shield:'🛡️',bomb:'💣'};
+        const pulse=0.7+Math.sin(p.anim)*0.3;
+        cx.globalAlpha=pulse;cx.shadowColor=cols[p.type];cx.shadowBlur=15;
+        cx.fillStyle=cols[p.type];cx.beginPath();cx.arc(p.x,p.y,p.sz,0,Math.PI*2);cx.fill();
+        cx.shadowBlur=0;cx.globalAlpha=1;cx.textAlign='center';cx.font='14px system-ui';
+        cx.fillText(icons[p.type],p.x,p.y+5);
+      }
+
+      // 敌人子弹 - 能量弹
+      for(const b of eBullets){
+        cx.shadowColor=b.col;cx.shadowBlur=10;
+        const g=cx.createRadialGradient(b.x,b.y,0,b.x,b.y,b.sz);
+        g.addColorStop(0,'#fff');g.addColorStop(0.4,b.col);g.addColorStop(1,'transparent');
+        cx.fillStyle=g;cx.beginPath();cx.arc(b.x,b.y,b.sz,0,Math.PI*2);cx.fill();
+        cx.shadowBlur=0;
+      }
+
+      // 敌人
+      for(const e of enemies){
+        if(e.isBoss)drawBoss(e);else drawEnemy(e);
+        if(e.hp<e.mhp){
+          const bw=e.w*1.4,bh=3;
+          cx.fillStyle='rgba(0,0,0,0.6)';cx.fillRect(e.x-bw/2,e.y-e.w-10,bw,bh);
+          cx.fillStyle=e.hp>e.mhp*0.5?'#4ade80':e.hp>e.mhp*0.25?'#fbbf24':'#ef4444';
+          cx.fillRect(e.x-bw/2,e.y-e.w-10,bw*(e.hp/e.mhp),bh);
+        }
+      }
+
+      // 玩家子弹 - 激光束
+      for(const b of bullets){
+        cx.shadowColor='#60a5fa';cx.shadowBlur=8;
+        const g=cx.createLinearGradient(b.x,b.y-b.h/2,b.x,b.y+b.h/2);
+        g.addColorStop(0,'#bfdbfe');g.addColorStop(0.5,'#60a5fa');g.addColorStop(1,'#3b82f6');
+        cx.fillStyle=g;cx.fillRect(b.x-b.w/2,b.y-b.h/2,b.w,b.h);
+        cx.shadowBlur=0;
+      }
+
+      // 导弹 - 带尾焰
+      for(const m of missiles){
+        cx.shadowColor='#f97316';cx.shadowBlur=10;
+        cx.fillStyle='#f97316';
+        cx.beginPath();cx.moveTo(m.x,m.y-m.h/2);cx.lineTo(m.x-m.w/2,m.y+m.h/2);cx.lineTo(m.x+m.w/2,m.y+m.h/2);cx.closePath();cx.fill();
+        cx.fillStyle='#fbbf24';cx.beginPath();cx.moveTo(m.x,m.y-m.h/2+3);cx.lineTo(m.x-2,m.y+2);cx.lineTo(m.x+2,m.y+2);cx.closePath();cx.fill();
+        cx.shadowBlur=0;
+      }
+
+      // 粒子
+      for(const p of particles){
+        cx.globalAlpha=Math.max(0,p.life/p.ml);
+        if(p.ring){
+          cx.strokeStyle=p.col;cx.lineWidth=2*(p.life/p.ml);cx.beginPath();cx.arc(p.x,p.y,p.sz,0,Math.PI*2);cx.stroke();
+        }else if(p.flash){cx.fillStyle='#fff';cx.fillRect(p.x-p.sz,p.y-p.sz,p.sz*2,p.sz*2);}
+        else{cx.fillStyle=p.col;cx.beginPath();cx.arc(p.x,p.y,p.sz,0,Math.PI*2);cx.fill();}
+      }
+      cx.globalAlpha=1;
+
+      // 浮动文字
+      for(const t of pops){
+        cx.globalAlpha=Math.max(0,t.life/t.ml);cx.textAlign='center';cx.font=`bold ${t.sz}px system-ui`;
+        cx.shadowColor=t.col;cx.shadowBlur=12;cx.fillStyle=t.col;cx.fillText(t.text,t.x,t.y);cx.shadowBlur=0;
+      }
+      cx.globalAlpha=1;
+
+      if(player.alive)drawPlayer();
+      if(state==='playing'||state==='over')drawHUD();
+    }
+
+    // ── 玩家飞船 - 多部件精致设计 ──
+    function drawPlayer(){
+      const{x,y,inv,shield,thrust,wLv}=player;
+      if(inv>0&&~~(inv/60)%2===0)cx.globalAlpha=0.35;
+
+      cx.save();cx.translate(x,y);
+
+      // 双引擎尾焰 - 多层
+      const fh=14+Math.sin(thrust)*6;
+      [-10,10].forEach(ox=>{
+        // 外层蓝焰
+        const g1=cx.createLinearGradient(ox,14,ox,14+fh);
+        g1.addColorStop(0,'rgba(96,165,250,0.8)');g1.addColorStop(0.5,'rgba(59,130,246,0.5)');g1.addColorStop(1,'transparent');
+        cx.fillStyle=g1;cx.beginPath();cx.moveTo(ox-5,14);cx.lineTo(ox,14+fh);cx.lineTo(ox+5,14);cx.fill();
+        // 内层白焰
+        const g2=cx.createLinearGradient(ox,14,ox,14+fh*0.6);
+        g2.addColorStop(0,'#fff');g2.addColorStop(0.5,'rgba(147,197,253,0.6)');g2.addColorStop(1,'transparent');
+        cx.fillStyle=g2;cx.beginPath();cx.moveTo(ox-2,14);cx.lineTo(ox,14+fh*0.6);cx.lineTo(ox+2,14);cx.fill();
+      });
+
+      // 机翼 - 左
+      cx.fillStyle='#1e40af';
+      cx.beginPath();cx.moveTo(-P.w,-4);cx.lineTo(-P.w-8,12);cx.lineTo(-P.w-2,16);cx.lineTo(-6,8);cx.closePath();cx.fill();
+      // 机翼 - 右
+      cx.beginPath();cx.moveTo(P.w,-4);cx.lineTo(P.w+8,12);cx.lineTo(P.w+2,16);cx.lineTo(6,8);cx.closePath();cx.fill();
+      // 翼尖发光
+      cx.fillStyle='#60a5fa';cx.globalAlpha=0.6+Math.sin(thrust*3)*0.3;
+      cx.beginPath();cx.arc(-P.w-5,13,2,0,Math.PI*2);cx.fill();
+      cx.beginPath();cx.arc(P.w+5,13,2,0,Math.PI*2);cx.fill();
+      cx.globalAlpha=1;
+
+      // 机身主体 - 深蓝渐变
+      const bodyG=cx.createLinearGradient(0,-P.h/2,0,P.h/2);
+      bodyG.addColorStop(0,'#60a5fa');bodyG.addColorStop(0.3,'#3b82f6');bodyG.addColorStop(0.7,'#2563eb');bodyG.addColorStop(1,'#1e40af');
+      cx.fillStyle=bodyG;
+      cx.beginPath();
+      cx.moveTo(0,-P.h/2);          // 机头
+      cx.lineTo(-8,-P.h/2+8);       // 左肩
+      cx.lineTo(-P.w+2,6);          // 左腰
+      cx.lineTo(-P.w*0.5,14);       // 左下翼根
+      cx.lineTo(0,10);              // 尾部中
+      cx.lineTo(P.w*0.5,14);        // 右下翼根
+      cx.lineTo(P.w-2,6);           // 右腰
+      cx.lineTo(8,-P.h/2+8);        // 右肩
+      cx.closePath();cx.fill();
+
+      // 机身高光线
+      cx.strokeStyle='rgba(147,197,253,0.4)';cx.lineWidth=1;
+      cx.beginPath();cx.moveTo(0,-P.h/2+4);cx.lineTo(0,8);cx.stroke();
+      cx.beginPath();cx.moveTo(-4,-P.h/2+10);cx.lineTo(-4,4);cx.stroke();
+      cx.beginPath();cx.moveTo(4,-P.h/2+10);cx.lineTo(4,4);cx.stroke();
+
+      // 驾驶舱 - 发光玻璃
+      const cockG=cx.createLinearGradient(0,-P.h/2+6,0,-2);
+      cockG.addColorStop(0,'#bfdbfe');cockG.addColorStop(0.5,'#93c5fd');cockG.addColorStop(1,'#3b82f6');
+      cx.fillStyle=cockG;
+      cx.beginPath();cx.moveTo(0,-P.h/2+6);cx.lineTo(-5,-P.h/2+14);cx.lineTo(-3,0);cx.lineTo(3,0);cx.lineTo(5,-P.h/2+14);cx.closePath();cx.fill();
+      // 驾驶舱反光
+      cx.fillStyle='rgba(255,255,255,0.3)';
+      cx.beginPath();cx.moveTo(0,-P.h/2+8);cx.lineTo(-3,-P.h/2+12);cx.lineTo(-1,-P.h/2+14);cx.closePath();cx.fill();
+
+      // 武器挂点发光
+      if(wLv>=1){
+        cx.fillStyle='#fbbf24';cx.globalAlpha=0.5+Math.sin(thrust*4)*0.3;
+        cx.beginPath();cx.arc(-12,4,2,0,Math.PI*2);cx.fill();
+        cx.beginPath();cx.arc(12,4,2,0,Math.PI*2);cx.fill();
+        cx.globalAlpha=1;
+      }
+      if(wLv>=2){
+        cx.fillStyle='#f97316';cx.globalAlpha=0.5+Math.sin(thrust*5)*0.3;
+        cx.beginPath();cx.arc(-20,8,1.5,0,Math.PI*2);cx.fill();
+        cx.beginPath();cx.arc(20,8,1.5,0,Math.PI*2);cx.fill();
+        cx.globalAlpha=1;
+      }
+
+      // 护盾 - 六边形能量盾
+      if(shield>0){
+        const sa=0.2+Math.sin(gt*0.12)*0.1;
+        cx.strokeStyle=`rgba(96,165,250,${sa})`;cx.lineWidth=2.5;
+        cx.beginPath();
+        for(let i=0;i<6;i++){const a=i*Math.PI/3-Math.PI/6,r=P.w+12;cx[i?'lineTo':'moveTo'](Math.cos(a)*r,Math.sin(a)*r);}
+        cx.closePath();cx.stroke();
+        // 护盾闪光点
+        cx.fillStyle=`rgba(147,197,253,${sa*1.5})`;
+        cx.beginPath();cx.arc(Math.cos(gt*0.08)*(P.w+12),Math.sin(gt*0.08)*(P.w+12),3,0,Math.PI*2);cx.fill();
+      }
+
+      cx.restore();
+      cx.globalAlpha=1;
+    }
+
+    // ── 敌人 - 每种独特设计 ──
+    function drawEnemy(e){
+      const{x,y,w,color,anim,type}=e;
+      cx.save();cx.translate(x,y);
+
+      // 发光光晕
+      cx.shadowColor=color;cx.shadowBlur=15;
+      cx.fillStyle=color;cx.globalAlpha=0.15;
+      cx.beginPath();cx.arc(0,0,w*1.2,0,Math.PI*2);cx.fill();
+      cx.globalAlpha=1;cx.shadowBlur=0;
+
+      if(type==='scout'){
+        // 三角形侦察机 - 尖锐
+        const g=cx.createLinearGradient(0,-w,0,w);
+        g.addColorStop(0,color);g.addColorStop(1,'#991b1b');
+        cx.fillStyle=g;
+        cx.beginPath();cx.moveTo(0,w);cx.lineTo(-w*0.9,-w*0.7);cx.lineTo(-w*0.3,-w*0.5);cx.lineTo(0,-w);cx.lineTo(w*0.3,-w*0.5);cx.lineTo(w*0.9,-w*0.7);cx.closePath();cx.fill();
+        // 核心
+        cx.fillStyle='#fca5a5';cx.beginPath();cx.arc(0,0,w*0.2,0,Math.PI*2);cx.fill();
+      }else if(type==='fighter'){
+        // 菱形战斗机 - 菱形+翼
+        cx.fillStyle=color;
+        cx.beginPath();cx.moveTo(0,-w);cx.lineTo(w*0.8,-w*0.2);cx.lineTo(w*1.2,w*0.3);cx.lineTo(w*0.4,w*0.6);cx.lineTo(0,w*0.4);cx.lineTo(-w*0.4,w*0.6);cx.lineTo(-w*1.2,w*0.3);cx.lineTo(-w*0.8,-w*0.2);cx.closePath();cx.fill();
+        // 装甲板
+        cx.fillStyle='rgba(255,255,255,0.15)';cx.fillRect(-w*0.3,-w*0.6,w*0.6,w*0.4);
+        // 引擎
+        cx.fillStyle='#fbbf24';cx.globalAlpha=0.5+Math.sin(anim*4)*0.3;
+        cx.beginPath();cx.arc(0,w*0.5,3,0,Math.PI*2);cx.fill();cx.globalAlpha=1;
+      }else if(type==='tank'){
+        // 六边形重装甲 - 厚重
+        cx.fillStyle=color;cx.beginPath();
+        for(let i=0;i<6;i++){const a=i*Math.PI/3-Math.PI/6;i?cx.lineTo(Math.cos(a)*w,Math.sin(a)*w):cx.moveTo(Math.cos(a)*w,Math.sin(a)*w);}
+        cx.closePath();cx.fill();
+        // 装甲纹理
+        cx.strokeStyle='rgba(255,255,255,0.2)';cx.lineWidth=1.5;
+        cx.beginPath();for(let i=0;i<6;i++){const a=i*Math.PI/3-Math.PI/6;i?cx.lineTo(Math.cos(a)*w*0.6,Math.sin(a)*w*0.6):cx.moveTo(Math.cos(a)*w*0.6,Math.sin(a)*w*0.6);}cx.closePath();cx.stroke();
+        // 核心脉冲
+        const pulse=0.5+Math.sin(anim*3)*0.3;
+        cx.fillStyle='#e9d5ff';cx.globalAlpha=pulse;cx.beginPath();cx.arc(0,0,w*0.25,0,Math.PI*2);cx.fill();cx.globalAlpha=1;
+      }else if(type==='speeder'){
+        // 飞镖形高速机 - 流线
+        const g=cx.createLinearGradient(0,-w,0,w);
+        g.addColorStop(0,'#2dd4bf');g.addColorStop(1,color);
+        cx.fillStyle=g;
+        cx.beginPath();cx.moveTo(0,w*1.2);cx.lineTo(-w*0.4,0);cx.lineTo(-w*0.8,-w*0.6);cx.lineTo(0,-w);cx.lineTo(w*0.8,-w*0.6);cx.lineTo(w*0.4,0);cx.closePath();cx.fill();
+        // 速度线
+        cx.strokeStyle='rgba(45,212,191,0.4)';cx.lineWidth=1;
+        cx.beginPath();cx.moveTo(-w*0.3,w*1.3);cx.lineTo(-w*0.3,w*1.8);cx.stroke();
+        cx.beginPath();cx.moveTo(w*0.3,w*1.3);cx.lineTo(w*0.3,w*1.8);cx.stroke();
+      }else if(type==='bomber'){
+        // 圆形轰炸机 - 厚重圆形+炮管
+        const g=cx.createRadialGradient(0,0,w*0.2,0,0,w);
+        g.addColorStop(0,'#f9a8d4');g.addColorStop(0.6,color);g.addColorStop(1,'#9d174d');
+        cx.fillStyle=g;cx.beginPath();cx.arc(0,0,w,0,Math.PI*2);cx.fill();
+        // 炮管
+        cx.fillStyle='#831843';cx.fillRect(-3,w*0.6,6,w*0.5);cx.fillRect(-w*0.7,-3,w*0.4,6);cx.fillRect(w*0.3,-3,w*0.4,6);
+        // 能量环
+        cx.strokeStyle='rgba(236,72,153,0.4)';cx.lineWidth=2;
+        cx.beginPath();cx.arc(0,0,w*0.65+Math.sin(anim*3)*3,0,Math.PI*2);cx.stroke();
+      }
+
+      cx.restore();
+    }
+
+    // ── BOSS - 多阶段巨型战舰 ──
+    function drawBoss(e){
+      const{x,y,w,phase,anim,mhp,hp}=e;
+      cx.save();cx.translate(x,y);
+
+      // 大型能量光晕
+      const haloA=0.08+Math.sin(anim*2)*0.04;
+      const haloG=cx.createRadialGradient(0,0,w*0.3,0,0,w*2);
+      haloG.addColorStop(0,phase===2?'rgba(251,191,36,0.15)':phase===1?'rgba(249,115,22,0.12)':'rgba(239,68,68,0.1)');
+      haloG.addColorStop(1,'transparent');
+      cx.fillStyle=haloG;cx.fillRect(-w*2,-w*2,w*4,w*4);
+
+      // 触手 / 翼展 - 随阶段变化
+      const tentCount=phase===2?8:phase===1?6:4;
+      for(let i=0;i<tentCount;i++){
+        const a=i*Math.PI*2/tentCount+anim*0.3;
+        const len=w*(1.2+phase*0.3)+Math.sin(anim*2+i)*8;
+        const tx=Math.cos(a)*len,ty=Math.sin(a)*len;
+        cx.strokeStyle=phase===2?'#fbbf24':phase===1?'#fb923c':'#ef4444';
+        cx.lineWidth=3-phase*0.3;cx.globalAlpha=0.5+Math.sin(anim*3+i)*0.2;
+        cx.beginPath();cx.moveTo(Math.cos(a)*w*0.8,Math.sin(a)*w*0.8);
+        cx.quadraticCurveTo(Math.cos(a+0.3)*len*0.6,Math.sin(a+0.3)*len*0.6,tx,ty);cx.stroke();
+        // 触手尖端发光
+        cx.fillStyle=cx.strokeStyle;cx.beginPath();cx.arc(tx,ty,3,0,Math.PI*2);cx.fill();
+      }
+      cx.globalAlpha=1;
+
+      // 主体装甲 - 多层
+      // 外层装甲
+      const armG=cx.createRadialGradient(0,0,w*0.2,0,0,w);
+      armG.addColorStop(0,'#991b1b');armG.addColorStop(0.5,'#7f1d1d');armG.addColorStop(1,'#450a0a');
+      cx.fillStyle=armG;
+      cx.beginPath();
+      cx.moveTo(0,-w);
+      cx.lineTo(-w*0.6,-w*0.8);cx.lineTo(-w*1.1,-w*0.3);cx.lineTo(-w*1.3,w*0.2);
+      cx.lineTo(-w*0.8,w*0.6);cx.lineTo(-w*0.3,w*0.8);
+      cx.lineTo(0,w*0.7);
+      cx.lineTo(w*0.3,w*0.8);cx.lineTo(w*0.8,w*0.6);
+      cx.lineTo(w*1.3,w*0.2);cx.lineTo(w*1.1,-w*0.3);
+      cx.lineTo(w*0.6,-w*0.8);
+      cx.closePath();cx.fill();
+
+      // 装甲板线条
+      cx.strokeStyle='rgba(248,113,113,0.3)';cx.lineWidth=1;
+      cx.beginPath();cx.moveTo(-w*0.8,-w*0.4);cx.lineTo(w*0.8,-w*0.4);cx.stroke();
+      cx.beginPath();cx.moveTo(-w*0.6,w*0.2);cx.lineTo(w*0.6,w*0.2);cx.stroke();
+      cx.beginPath();cx.moveTo(-w*0.3,-w*0.7);cx.lineTo(0,-w*0.3);cx.lineTo(w*0.3,-w*0.7);cx.stroke();
+
+      // 内层装甲
+      cx.fillStyle='rgba(127,29,29,0.6)';
+      cx.beginPath();cx.moveTo(0,-w*0.6);cx.lineTo(-w*0.5,-w*0.2);cx.lineTo(-w*0.4,w*0.4);cx.lineTo(0,w*0.5);cx.lineTo(w*0.4,w*0.4);cx.lineTo(w*0.5,-w*0.2);cx.closePath();cx.fill();
+
+      // 能量核心 - 会随阶段变化颜色和脉动
+      const coreColor=phase===2?'#fbbf24':phase===1?'#fb923c':'#ef4444';
+      const corePulse=0.6+Math.sin(anim*4)*0.4;
+      cx.shadowColor=coreColor;cx.shadowBlur=25*corePulse;
+      cx.fillStyle=coreColor;cx.globalAlpha=corePulse;
+      cx.beginPath();cx.arc(0,0,w*0.22,0,Math.PI*2);cx.fill();
+      // 核心内环
+      cx.fillStyle='#fff';cx.globalAlpha=corePulse*0.5;
+      cx.beginPath();cx.arc(0,0,w*0.1,0,Math.PI*2);cx.fill();
+      cx.shadowBlur=0;cx.globalAlpha=1;
+
+      // 能量核心旋转环
+      cx.strokeStyle=coreColor;cx.lineWidth=2;cx.globalAlpha=0.4;
+      cx.beginPath();cx.arc(0,0,w*0.35+Math.sin(anim*2)*3,anim*2,anim*2+Math.PI*1.5);cx.stroke();
+      cx.beginPath();cx.arc(0,0,w*0.45+Math.cos(anim*2)*3,-anim*2,-anim*2+Math.PI);cx.stroke();
+      cx.globalAlpha=1;
+
+      // 翼展装饰 - 发光尖刺
+      [-1,1].forEach(side=>{
+        cx.fillStyle=coreColor;cx.globalAlpha=0.6+Math.sin(anim*3)*0.3;
+        cx.beginPath();cx.moveTo(side*w*1.3,w*0.2);cx.lineTo(side*(w*1.5+Math.sin(anim*4)*5),-w*0.1);cx.lineTo(side*w*1.3,-w*0.3);cx.closePath();cx.fill();
+        cx.globalAlpha=1;
+      });
+
+      // 受伤效果 - 闪烁火花
+      if(hp<mhp*0.5){
+        if(~~(anim*10)%3===0){
+          cx.fillStyle='#fbbf24';cx.globalAlpha=0.6;
+          const sparkX=(Math.random()-0.5)*w*2,sparkY=(Math.random()-0.5)*w;
+          cx.beginPath();cx.arc(sparkX,sparkY,3+Math.random()*3,0,Math.PI*2);cx.fill();
+          cx.globalAlpha=1;
+        }
+      }
+
+      cx.restore();
+    }
+
+    // ── HUD ──
+    function drawHUD(){
+      cx.fillStyle='rgba(0,0,0,0.6)';
+      cx.fillRect(0,0,W,52);
+      cx.textAlign='left';cx.font='bold 14px system-ui';
+      cx.fillStyle='#fbbf24';cx.fillText(`⭐ ${score}`,12,20);
+      cx.fillStyle='#9ca3af';cx.font='12px system-ui';cx.fillText(`最高: ${hi}`,12,38);
+      cx.textAlign='center';cx.font='bold 14px system-ui';cx.fillStyle='#93c5fd';cx.fillText(`第 ${wave} 波`,W/2,20);
+      if(combo>1){cx.fillStyle=combo>5?'#fbbf24':'#e0e7ff';cx.font=`bold ${14+Math.min(combo,8)}px system-ui`;cx.fillText(`🔥 ×${combo}`,W/2,40);}
+      cx.textAlign='right';cx.font='bold 14px system-ui';cx.fillStyle='#9ca3af';
+      cx.fillText(`击杀: ${kills}  命中: ${shots>0?Math.round(hits/shots*100):0}%`,W-12,20);
+      cx.fillText(`炸弹: ${'💣'.repeat(player.bombs)}${'⬜'.repeat(P.bombMax-player.bombs)}`,W-12,38);
+
+      if(player.alive){
+        const bw=180,bh=8,bx=12,by=H-24;
+        cx.fillStyle='rgba(0,0,0,0.5)';cx.fillRect(bx,by,bw,bh);
+        const r=player.hp/player.mhp;
+        cx.fillStyle=r>0.5?'#4ade80':r>0.25?'#fbbf24':'#ef4444';cx.fillRect(bx,by,bw*r,bh);
+        cx.textAlign='left';cx.font='bold 10px system-ui';cx.fillStyle='#fff';cx.fillText(`HP ${Math.ceil(player.hp)}/${player.mhp}`,bx+4,by-2);
+        if(P.shieldMax>0){
+          const sy=by-14;cx.fillStyle='rgba(0,0,0,0.5)';cx.fillRect(bx,sy,bw,5);
+          cx.fillStyle='#60a5fa';cx.fillRect(bx,sy,bw*(player.shield/P.shieldMax),5);
+          cx.fillStyle='#93c5fd';cx.font='9px system-ui';cx.fillText(`🛡️ ${Math.ceil(player.shield)}`,bx+bw+6,sy+5);
+        }
+        cx.textAlign='right';cx.font='bold 12px system-ui';cx.fillStyle='#fbbf24';
+        const lvN=['基础','三连','五连','导弹'];cx.fillText(`🔫 ${lvN[player.wLv]}`,W-12,H-16);
+        cx.textAlign='center';cx.font='11px system-ui';cx.fillStyle='rgba(255,255,255,0.3)';
+        cx.fillText('WASD/方向键移动 · 空格/点击射击 · E炸弹 · P暂停',W/2,H-6);
+      }
+    }
+
+    function drawMenu(){
+      cx.textAlign='center';
+      // 标题 - 多层发光
+      cx.font='bold 52px system-ui';cx.shadowColor='#3b82f6';cx.shadowBlur=40;cx.fillStyle='#60a5fa';
+      cx.fillText('🚀 太空射击',W/2,H/2-90);cx.shadowBlur=20;cx.fillStyle='#93c5fd';
+      cx.fillText('🚀 太空射击',W/2,H/2-90);cx.shadowBlur=0;
+      cx.font='18px system-ui';cx.fillStyle='#94a3b8';cx.fillText('抵御外星入侵，保卫银河系！',W/2,H/2-45);
+      const pulse=0.7+Math.sin(Date.now()/400)*0.3;cx.globalAlpha=pulse;
+      cx.font='bold 22px system-ui';cx.fillStyle='#fbbf24';cx.fillText('[ 点击开始 ]',W/2,H/2+10);cx.globalAlpha=1;
+      cx.font='14px system-ui';cx.fillStyle='#64748b';
+      ['⚔️ 武器升级系统','🛡️ 护盾 & 炸弹','👾 5 种敌人 + BOSS','🔥 连击倍率'].forEach((f,i)=>cx.fillText(f,W/2,H/2+60+i*24));
+      if(hi>0){cx.font='bold 14px system-ui';cx.fillStyle='#9ca3af';cx.fillText(`最高分: ${hi}`,W/2,H/2+170);}
+    }
+
+    function drawGameOver(){
+      cx.fillStyle='rgba(5,5,16,0.85)';cx.fillRect(0,0,W,H);
+      cx.textAlign='center';cx.font='bold 44px system-ui';cx.shadowColor='#ef4444';cx.shadowBlur=20;cx.fillStyle='#ef4444';
+      cx.fillText('💀 游戏结束',W/2,H/2-110);cx.shadowBlur=0;
+      cx.font='bold 30px system-ui';cx.fillStyle='#fbbf24';cx.fillText(`得分: ${score}`,W/2,H/2-60);
+      if(score>=hi&&score>0){cx.font='bold 18px system-ui';cx.fillStyle='#4ade80';cx.fillText('🏆 新纪录！',W/2,H/2-30);}
+      cx.font='16px system-ui';cx.fillStyle='#94a3b8';
+      const acc=shots>0?Math.round(hits/shots*100):0;
+      cx.fillText(`击杀: ${kills}  命中率: ${acc}%  波次: ${wave}`,W/2,H/2+5);
+      const pulse=0.7+Math.sin(Date.now()/400)*0.3;cx.globalAlpha=pulse;
+      cx.font='bold 20px system-ui';cx.fillStyle='#93c5fd';cx.fillText('[ 点击重新开始 ]',W/2,H/2+55);cx.globalAlpha=1;
+    }
+
+    requestAnimationFrame(loop);
+    </script>
+  </body>
+</html>

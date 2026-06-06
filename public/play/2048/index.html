@@ -147,7 +147,7 @@
         const t = e.changedTouches[0];
         const dx = t.clientX - touchStart.clientX, dy = t.clientY - touchStart.clientY;
         if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return;
-        if (Math.abs(dx) > Math.abs(dy)) move(dx > 0 ? 2 : 0); else move(dy > 0 ? 3 : 1);
+        if (Math.abs(dx) > Math.abs(dy)) move(dx > 0 ? 2 : 0); else move(dy > 0 ? 1 : 3);
       });
 
       document.getElementById("newGame").addEventListener("click", reset);

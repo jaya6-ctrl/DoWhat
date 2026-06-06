@@ -23,7 +23,7 @@ export async function generateMetadata({ searchParams }: { searchParams: SearchP
   return {
     title: q ? `搜索：${q}` : "搜索游戏",
     description: q ? `DoWhat 上关于「${q}」的小游戏搜索结果。` : "在 DoWhat 搜索 H5 小游戏。",
-    robots: { index: false }, // 搜索结果页不索引
+    robots: { index: false },
   };
 }
 
@@ -38,14 +38,14 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-6">
-      <nav className="mb-4 text-sm text-[color:var(--color-muted)]">
-        <Link href="/" className="hover:text-[color:var(--color-fg)]">
-          首页
-        </Link>
-        <span className="mx-1.5">/</span>
-        <span className="text-[color:var(--color-fg)]">搜索</span>
+      {/* 面包屑 */}
+      <nav className="mb-4 px-xs text-[color:var(--color-muted)]">
+        <Link href="/" className="text-[color:var(--color-primary)] hover:underline">HOME</Link>
+        <span className="mx-1.5 text-[color:var(--color-border)]">/</span>
+        <span className="text-[color:var(--color-fg)]">SEARCH</span>
       </nav>
 
+      {/* 搜索框 */}
       <form action="/search" className="mb-6">
         <div className="flex max-w-2xl gap-2">
           <input
@@ -54,22 +54,24 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
             defaultValue={q}
             placeholder="搜索游戏名、玩法描述..."
             autoFocus
-            className="h-11 flex-1 rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-bg)] px-4 text-base outline-none focus:border-[color:var(--color-primary)]"
+            className="pixel-search h-10 flex-1 border-2 border-[color:var(--color-border)] bg-[color:var(--color-bg)] px-4 text-sm text-[color:var(--color-fg)] outline-none transition-colors focus:border-[color:var(--color-primary)]"
+            style={{ boxShadow: '2px 2px 0 rgba(0,0,0,0.2)', fontFamily: 'var(--font-pixel)', fontSize: '10px' }}
           />
           <button
             type="submit"
-            className="rounded-lg bg-[color:var(--color-primary)] px-5 text-sm font-medium text-white hover:bg-[color:var(--color-primary-hover)]"
+            className="bg-[color:var(--color-primary)] px-5 text-[#0f0f23] transition-all hover:brightness-110"
+            style={{ fontFamily: 'var(--font-pixel)', fontSize: '10px', boxShadow: '3px 3px 0 rgba(0,0,0,0.3)' }}
           >
-            搜索
+            GO
           </button>
         </div>
       </form>
 
       {q ? (
         <>
-          <p className="mb-4 text-sm text-[color:var(--color-muted)]">
-            搜索「<span className="font-medium text-[color:var(--color-fg)]">{q}</span>」
-            共找到 <span className="font-medium text-[color:var(--color-fg)]">{result.total}</span> 款游戏
+          <p className="mb-4 px-sm text-[color:var(--color-muted)]">
+            搜索「<span className="font-bold text-[color:var(--color-fg)]">{q}</span>」
+            共找到 <span className="font-bold text-[color:var(--color-primary)]">{result.total}</span> 款游戏
           </p>
 
           {result.items.length > 0 ? (
@@ -81,11 +83,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
               </div>
 
               {result.totalPages > 1 && (
-                <Pagination
-                  page={result.page}
-                  totalPages={result.totalPages}
-                  buildHref={(p) => makeHref(q, p)}
-                />
+                <Pagination page={result.page} totalPages={result.totalPages} buildHref={(p) => makeHref(q, p)} />
               )}
             </>
           ) : (
@@ -93,8 +91,9 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
           )}
         </>
       ) : (
-        <div className="rounded-xl border border-dashed border-[color:var(--color-border)] p-12 text-center text-sm text-[color:var(--color-muted)]">
-          输入关键词开始搜索，例如「贪吃蛇」「2048」「益智」
+        <div className="border-2 border-dashed border-[color:var(--color-border)] p-12 text-center">
+          <p className="px text-[color:var(--color-primary)]">INPUT KEYWORD</p>
+          <p className="mt-2 text-xs text-[color:var(--color-muted)]">输入关键词开始搜索，例如「贪吃蛇」「2048」「益智」</p>
         </div>
       )}
     </div>
@@ -103,84 +102,41 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
 
 function EmptyState({ q }: { q: string }) {
   return (
-    <div className="rounded-xl border border-dashed border-[color:var(--color-border)] p-12 text-center">
-      <p className="text-base text-[color:var(--color-fg)]">没找到「{q}」相关的游戏</p>
+    <div className="border-2 border-dashed border-[color:var(--color-border)] p-12 text-center">
+      <p className="px text-[color:var(--color-primary)]">NOT FOUND</p>
       <p className="mt-2 text-sm text-[color:var(--color-muted)]">
-        试试更短的关键词，或{" "}
-        <Link href="/games" className="text-[color:var(--color-primary)] hover:underline">
-          浏览全部游戏
-        </Link>
+        没找到「{q}」相关的游戏，试试更短的关键词，或
+        <Link href="/games" className="ml-1 text-[color:var(--color-primary)] hover:underline">浏览全部游戏</Link>
       </p>
     </div>
   );
 }
 
-function Pagination({
-  page,
-  totalPages,
-  buildHref,
-}: {
-  page: number;
-  totalPages: number;
-  buildHref: (p: number) => string;
-}) {
+function Pagination({ page, totalPages, buildHref }: { page: number; totalPages: number; buildHref: (p: number) => string }) {
   const pages = pageNumbers(page, totalPages);
   return (
     <nav className="mt-8 flex items-center justify-center gap-1" aria-label="分页">
-      <PageLink href={buildHref(page - 1)} disabled={page <= 1} ariaLabel="上一页">
-        ‹
-      </PageLink>
+      <PageLink href={buildHref(page - 1)} disabled={page <= 1}>◀</PageLink>
       {pages.map((p, i) =>
         p === "..." ? (
-          <span key={`gap-${i}`} className="px-2 text-sm text-[color:var(--color-muted)]">
-            …
-          </span>
+          <span key={`gap-${i}`} className="px-2 px-xs text-[color:var(--color-muted)]">···</span>
         ) : (
-          <PageLink key={p} href={buildHref(p)} active={p === page}>
-            {p}
-          </PageLink>
+          <PageLink key={p} href={buildHref(p)} active={p === page}>{p}</PageLink>
         ),
       )}
-      <PageLink href={buildHref(page + 1)} disabled={page >= totalPages} ariaLabel="下一页">
-        ›
-      </PageLink>
+      <PageLink href={buildHref(page + 1)} disabled={page >= totalPages}>▶</PageLink>
     </nav>
   );
 }
 
-function PageLink({
-  href,
-  children,
-  active,
-  disabled,
-  ariaLabel,
-}: {
-  href: string;
-  children: React.ReactNode;
-  active?: boolean;
-  disabled?: boolean;
-  ariaLabel?: string;
-}) {
-  const base =
-    "grid h-9 min-w-9 place-items-center rounded-md px-3 text-sm transition border border-[color:var(--color-border)]";
-  if (disabled)
-    return (
-      <span
-        className={`${base} cursor-not-allowed text-[color:var(--color-muted)] opacity-50`}
-        aria-disabled
-      >
-        {children}
-      </span>
-    );
+function PageLink({ href, children, active, disabled }: { href: string; children: React.ReactNode; active?: boolean; disabled?: boolean }) {
+  const base = "flex h-9 min-w-[36px] items-center justify-center border-2 px-2 transition-colors";
+  if (disabled) return <span className={`${base} cursor-not-allowed border-[color:var(--color-border)] text-[color:var(--color-muted)] opacity-40`} style={{ fontFamily: 'var(--font-pixel)', fontSize: '9px' }} aria-disabled>{children}</span>;
   return (
     <Link
       href={href}
-      aria-label={ariaLabel}
-      className={
-        active
-          ? `${base} border-[color:var(--color-primary)] bg-[color:var(--color-primary)] text-white`
-          : `${base} hover:border-[color:var(--color-primary)] hover:text-[color:var(--color-primary)]`
-      }
+      className={active ? `${base} border-[color:var(--color-primary)] bg-[color:var(--color-primary)] text-[#0f0f23]` : `${base} border-[color:var(--color-border)] text-[color:var(--color-muted)] hover:border-[color:var(--color-primary)] hover:text-[color:var(--color-primary)]`}
+      style={{ fontFamily: 'var(--font-pixel)', fontSize: '9px', boxShadow: active ? '2px 2px 0 rgba(0,0,0,0.3)' : '1px 1px 0 rgba(0,0,0,0.15)' }}
     >
       {children}
     </Link>

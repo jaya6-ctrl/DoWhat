@@ -1,33 +1,147 @@
 @import "tailwindcss";
 
 @theme inline {
-  --color-bg: #f7f8fa;
-  --color-surface: #ffffff;
-  --color-fg: #18181b;
-  --color-muted: #6b7280;
-  --color-border: #e5e7eb;
-  --color-primary: #ff6a00;
-  --color-primary-hover: #e85f00;
+  --color-bg: #0f0f23;
+  --color-surface: #1a1a2e;
+  --color-fg: #e0e0e0;
+  --color-muted: #7a7a9a;
+  --color-border: #2a2a4a;
+  --color-primary: #f0c040;
+  --color-primary-hover: #d4a830;
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-pixel: 'Press Start 2P', monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  @theme inline {
-    --color-bg: #0a0a0b;
-    --color-surface: #141416;
-    --color-fg: #ededed;
-    --color-muted: #9ca3af;
-    --color-border: #27272a;
-  }
-}
-
-html,
-body {
-  height: 100%;
-}
+html, body { height: 100%; }
 
 body {
   background: var(--color-bg);
   color: var(--color-fg);
+  image-rendering: pixelated;
+  -webkit-font-smoothing: none;
 }
+
+/* ── 像素网格背景 ── */
+.pixel-grid {
+  background-image:
+    linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+  background-size: 8px 8px;
+}
+
+/* ── CRT 扫描线 ── */
+.crt-overlay {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.06) 2px,
+    rgba(0,0,0,0.06) 4px
+  );
+}
+
+/* ── 像素边框 ── */
+.pixel-border {
+  border: 2px solid var(--color-border);
+  box-shadow: 4px 4px 0 rgba(0,0,0,0.4);
+}
+
+.pixel-border-sm {
+  border: 2px solid var(--color-border);
+  box-shadow: 2px 2px 0 rgba(0,0,0,0.3);
+}
+
+/* ── 像素按钮 ── */
+.pixel-btn {
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  padding: 8px 16px;
+  background: var(--color-primary);
+  color: #0f0f23;
+  border: none;
+  box-shadow: 4px 4px 0 rgba(0,0,0,0.5);
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  transition: transform 0.05s, box-shadow 0.05s;
+  image-rendering: pixelated;
+}
+.pixel-btn:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0 rgba(0,0,0,0.5);
+}
+.pixel-btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0 rgba(0,0,0,0.5);
+}
+
+/* ── 像素 Hero ── */
+@keyframes star-twinkle {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+@keyframes blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+.pixel-blink { animation: blink 1s step-end infinite; }
+
+/* ── 像素角色走路 ── */
+@keyframes walk {
+  0% { transform: translateX(-40px); }
+  100% { transform: translateX(calc(100vw + 40px)); }
+}
+.pixel-walker {
+  position: absolute;
+  bottom: 0;
+  animation: walk 18s linear infinite;
+  image-rendering: pixelated;
+  z-index: 5;
+  pointer-events: none;
+}
+.pixel-walker:nth-child(2) { animation-duration: 25s; animation-delay: -8s; bottom: 4px; }
+
+/* ── 分类横向滚动 ── */
+.hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+
+/* ── 游戏卡片悬浮 ── */
+.game-card-play {
+  opacity: 0;
+  transition: opacity 0.15s step-end;
+}
+.group:hover .game-card-play { opacity: 1; }
+
+/* ── 像素弹跳 ── */
+@keyframes pixel-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+/* ── 搜索框聚焦 ── */
+.pixel-search:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+/* ── 像素化图片 ── */
+.pixel-img {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* ── 像素字体工具类 ── */
+.px, .px-sm, .px-xs {
+  font-family: var(--font-pixel);
+  line-height: 1.6;
+}
+.px { font-size: 11px; }
+.px-sm { font-size: 9px; }
+.px-xs { font-size: 7px; }

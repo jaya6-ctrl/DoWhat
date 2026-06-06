@@ -32,16 +32,16 @@ export default async function VerifyPage({
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-md flex-col gap-6 px-4 py-10 sm:py-16">
-      <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">邮箱验证失败</h1>
-        <p className="text-sm text-[color:var(--color-muted)]">{errorMessage}</p>
-      </header>
+    <div className="mx-auto flex w-full max-w-md flex-col items-center gap-6 px-4 py-16 text-center">
+      <span style={{ fontSize: '48px' }}>❌</span>
+      <h1 className="px text-[#e53e3e]">VERIFY FAILED</h1>
+      <p className="px-sm text-[color:var(--color-muted)]">{errorMessage}</p>
       <Link
         href="/login"
-        className="inline-flex h-10 items-center justify-center rounded-md border border-[color:var(--color-border)] px-4 text-sm"
+        className="bg-[color:var(--color-primary)] px-6 py-2.5 text-[#0f0f23] transition-all hover:brightness-110"
+        style={{ fontFamily: 'var(--font-pixel)', fontSize: '10px', boxShadow: '3px 3px 0 rgba(0,0,0,0.3)' }}
       >
-        返回登录
+        ◀ BACK TO LOGIN
       </Link>
     </div>
   );
