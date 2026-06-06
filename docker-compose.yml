@@ -1,4 +1,17 @@
 services:
+  nginx:
+    image: nginx:1.28-alpine
+    container_name: dowhat-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./docker/nginx/default.local.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./docker/nginx/maintenance.html:/usr/share/nginx/html/maintenance.html:ro
+      - nginx_maintenance:/etc/nginx  # 用于维护模式标志文件
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # 访问宿主机服务
+
   postgres:
     image: postgres:16-alpine
     container_name: dowhat-postgres
@@ -42,3 +55,4 @@ services:
 volumes:
   dowhat_pg_data:
   dowhat_redis_data:
+  nginx_maintenance:
