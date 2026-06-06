@@ -78,9 +78,15 @@ echo "[build] 自检通过"
 echo "==========================================="
 echo "[build] 3/4 构建 app 镜像(build 期会 migrate + seed + next build)..."
 echo "==========================================="
+# 使用 docker build 直接构建（因为 docker-compose.prod.yml 中没有 build 配置）
 # build 容器用 network:host,通过宿主机 loopback 连 postgres
-export BUILD_DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/${POSTGRES_DB}?schema=public"
-docker compose -f "$COMPOSE_FILE" build app
+BUILD_DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/${POSTGRES_DB}?schema=public"
+docker build \
+  --network host \
+  --build-arg DATABASE_URL="$BUILD_DATABASE_URL" \
+  -t "${IMAGE_NAME}:latest" \
+  -f Dockerfile \
+  .
 
 echo "==========================================="
 echo "[build] 4/4 打版本标签..."
