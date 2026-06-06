@@ -124,6 +124,61 @@ DoWhat/
 
 首发场景：把项目搬到一台云 VPS 上，先用 `http://<server_ip>:3000` 调试，不上 HTTPS / 域名。整套用 Docker Compose 拉起 app + postgres + redis + mailpit。
 
+### 快速部署（推荐）
+
+使用 `docker/deploy.sh` 一键部署脚本：
+
+```bash
+# 1. 准备 .env 文件
+cp .env.prod.example .env
+vim .env  # 修改密码等配置
+
+# 2. 一键部署
+bash docker/deploy.sh
+```
+
+**脚本会自动执行：**
+1. 加载 `.env` 环境变量
+2. 启动 PostgreSQL 并等待就绪
+3. 自检数据库连接（用 `--network host` 模拟构建环境）
+4. 构建 app 镜像（含 Prisma migrate + seed + Next.js 构建）
+5. 启动所有服务
+
+**常用场景：**
+
+```bash
+# 首次部署
+bash docker/deploy.sh
+
+# 代码更新后重新部署
+git pull origin main
+bash docker/deploy.sh
+
+# 查看部署状态
+docker compose -f docker-compose.prod.yml ps
+
+# 查看日志
+docker compose -f docker-compose.prod.yml logs -f app
+```
+
+**故障排查：**
+
+如果自检失败（连不到 localhost:5432），检查：
+```bash
+# postgres 是否运行
+docker ps | grep postgres
+
+# 端口是否监听
+ss -tlnp | grep 5432
+
+# 端口绑定详情
+docker inspect dowhat-postgres | grep -i ports
+```
+
+---
+
+### 详细部署步骤（手动）
+
 ### 1. 准备产物文件（已随仓库提交）
 
 | 文件 | 作用 |
