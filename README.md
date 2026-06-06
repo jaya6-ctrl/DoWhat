@@ -56,6 +56,8 @@ pnpm dev
 
 ## 常用脚本
 
+### 开发脚本
+
 | 命令 | 说明 |
 | --- | --- |
 | `pnpm dev` | 启动 Next.js dev（Turbopack） |
@@ -70,6 +72,16 @@ pnpm dev
 | `pnpm db:reset` | 清库 + 重跑迁移 + seed |
 | `pnpm db:seed` | 仅跑 seed |
 | `pnpm db:studio` | 打开 Prisma Studio |
+
+### 部署脚本
+
+| 命令 | 说明 |
+| --- | --- |
+| `bash docker/build.sh` | 构建 app 镜像并打版本标签 |
+| `bash docker/deploy.sh` | 启动所有服务（需先构建镜像） |
+| `bash docker/maintenance.sh on` | 开启维护模式 |
+| `bash docker/maintenance.sh off` | 关闭维护模式 |
+| `bash docker/maintenance.sh status` | 查看维护状态 |
 
 ## 目录结构
 
@@ -95,9 +107,19 @@ DoWhat/
 │   └── seed.ts
 ├── public/
 │   └── play/               # 本地游戏静态资源（与 /games/* 路由隔离，P3 切 OSS）
+├── docker/
+│   ├── build.sh            # 镜像构建脚本（打版本标签）
+│   ├── deploy.sh           # 生产部署脚本（启动服务）
+│   ├── maintenance.sh      # 维护模式控制脚本
+│   ├── entrypoint.sh       # 容器入口脚本
+│   └── nginx/
+│       ├── default.conf    # 生产 Nginx 配置
+│       ├── default.local.conf # 本地开发 Nginx 配置
+│       └── maintenance.html # 维护页面
 ├── tests/{unit,e2e}/
 ├── docs/                   # 技术文档 + 需求文档
-├── docker-compose.yml
+├── docker-compose.yml      # 本地开发 compose
+├── docker-compose.prod.yml # 生产环境 compose
 ├── .env.example
 └── pnpm-workspace.yaml     # pnpm 11 的 allowBuilds 配置
 ```
@@ -126,53 +148,112 @@ DoWhat/
 
 ### 快速部署（推荐）
 
-使用 `docker/deploy.sh` 一键部署脚本：
+部署流程分为两步：**构建镜像** 和 **启动服务**。
+
+#### 首次部署
 
 ```bash
 # 1. 准备 .env 文件
 cp .env.prod.example .env
 vim .env  # 修改密码等配置
 
-# 2. 一键部署
+# 2. 构建镜像（含数据库迁移 + 种子数据 + Next.js 构建）
+bash docker/build.sh
+
+# 3. 修改 docker-compose.prod.yml 中的 image 字段
+#    将 image: dowhat-app:latest 改为 build.sh 输出的镜像名称
+#    例如: image: dowhat-app:v20240606123456
+
+# 4. 启动服务
 bash docker/deploy.sh
 ```
 
-**脚本会自动执行：**
-1. 加载 `.env` 环境变量
-2. 启动 PostgreSQL 并等待就绪
-3. 自检数据库连接（用 `--network host` 模拟构建环境）
-4. 构建 app 镜像（含 Prisma migrate + seed + Next.js 构建）
-5. 启动所有服务
-
-**常用场景：**
+#### 代码更新后重新部署
 
 ```bash
-# 首次部署
-bash docker/deploy.sh
-
-# 代码更新后重新部署
+# 1. 拉取最新代码
 git pull origin main
-bash docker/deploy.sh
 
+# 2. 重新构建镜像
+bash docker/build.sh
+
+# 3. 修改 docker-compose.prod.yml 中的 image 字段
+
+# 4. 启动服务
+bash docker/deploy.sh
+```
+
+#### 只更新静态资源（不重新构建）
+
+如果只修改了 `public/` 目录下的文件，可以直接重启：
+
+```bash
+docker compose -f docker-compose.prod.yml restart app
+```
+
+**常用命令：**
+
+```bash
 # 查看部署状态
 docker compose -f docker-compose.prod.yml ps
 
 # 查看日志
 docker compose -f docker-compose.prod.yml logs -f app
+
+# 查看所有镜像版本
+docker images dowhat-app
+```
+
+### Nginx 反向代理
+
+项目使用 Nginx 作为反向代理，提供以下功能：
+
+- **统一入口**：80 端口（后续可扩展 HTTPS）
+- **维护模式**：更新时自动显示维护页面
+- **静态缓存**：Next.js 静态资源缓存优化
+
+**访问方式**：
+- 之前：`http://<server_ip>:3000`
+- 现在：`http://<server_ip>`（不需要加端口号）
+
+### 维护模式
+
+手动控制维护模式：
+
+```bash
+# 开启维护模式（用户看到维护页面）
+bash docker/maintenance.sh on
+
+# 关闭维护模式（恢复正常）
+bash docker/maintenance.sh off
+
+# 查看维护状态
+bash docker/maintenance.sh status
 ```
 
 **故障排查：**
 
-如果自检失败（连不到 localhost:5432），检查：
 ```bash
+# 查看所有容器状态
+docker compose -f docker-compose.prod.yml ps
+
+# 查看 app 日志
+docker compose -f docker-compose.prod.yml logs -f app
+
+# 查看 nginx 日志
+docker compose -f docker-compose.prod.yml logs -f nginx
+
+# 测试 nginx 配置
+docker compose -f docker-compose.prod.yml exec nginx nginx -t
+
+# 查看所有镜像版本
+docker images dowhat-app
+
 # postgres 是否运行
 docker ps | grep postgres
 
 # 端口是否监听
 ss -tlnp | grep 5432
-
-# 端口绑定详情
-docker inspect dowhat-postgres | grep -i ports
 ```
 
 ---

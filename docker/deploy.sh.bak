@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# 生产部署脚本(必须在云服务器上用这个,不要直接 docker compose build)
+#
+# 用法:
+#   bash docker/deploy.sh
+#
+# 流程:
+#   1. 加载 .env
+#   2. 先起 postgres,等它健康
+#   3. 自检:用 --network host 模拟 build 容器,确认 localhost:5432 真的可达
+#   4. build app 镜像(build 容器走 host 网络,通过 localhost:5432 连 postgres)
+#      build 期间自动:prisma migrate deploy + next build(含 ISR 预渲染)
+#   5. 起完整服务
+set -euo pipefail
+
+COMPOSE_FILE="docker-compose.prod.yml"
+ENV_FILE=".env"
+
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "[deploy] $ENV_FILE 不存在,请先 cp .env.prod.example .env 并改好密码" >&2
+  exit 1
+fi
+
+set -a
+# shellcheck disable=SC1090
+source "$ENV_FILE"
+set +a
+
+: "${POSTGRES_USER:?POSTGRES_USER 未设置}"
+: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD 未设置}"
+: "${POSTGRES_DB:?POSTGRES_DB 未设置}"
+
+echo "==========================================="
+echo "[deploy] 1/4 启动 postgres..."
+echo "==========================================="
+docker compose -f "$COMPOSE_FILE" up -d postgres
+
+echo "[deploy] 等待 postgres healthcheck 通过..."
+for i in {1..60}; do
+  if docker compose -f "$COMPOSE_FILE" exec -T postgres \
+       pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" >/dev/null 2>&1; then
+    echo "[deploy] postgres OK"
+    break
+  fi
+  if [[ $i -eq 60 ]]; then
+    echo "[deploy] postgres 等待超时(60s)" >&2
+    exit 1
+  fi
+  sleep 1
+done
+
+echo "==========================================="
+echo "[deploy] 2/4 自检:用 --network host 模拟 build 容器,试连 localhost:5432..."
+echo "==========================================="
+if ! docker run --rm --network host postgres:16-alpine \
+       pg_isready -h 127.0.0.1 -p 5432 -U "$POSTGRES_USER" >/dev/null 2>&1; then
+  echo "[deploy] 自检失败:host 网络下连不到 127.0.0.1:5432" >&2
+  echo "[deploy] 排查:" >&2
+  echo "  ss -tlnp | grep 5432                              # 宿主机 5432 是否在监听" >&2
+  echo "  docker ps | grep postgres                          # postgres 端口映射是否正确" >&2
+  echo "  docker inspect dowhat-postgres | grep -i ports     # 端口绑定详情" >&2
+  exit 1
+fi
+echo "[deploy] 自检通过"
+
+echo "==========================================="
+echo "[deploy] 3/5 开启维护模式..."
+echo "==========================================="
+bash docker/maintenance.sh on || true  # 如果 nginx 未运行则跳过
+
+echo "==========================================="
+echo "[deploy] 4/5 构建 app 镜像(build 期会 migrate + next build)..."
+echo "==========================================="
+# build 容器用 network:host,通过宿主机 loopback 连 postgres
+export BUILD_DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/${POSTGRES_DB}?schema=public"
+docker compose -f "$COMPOSE_FILE" build app
+
+echo "==========================================="
+echo "[deploy] 5/5 启动全部服务..."
+echo "==========================================="
+docker compose -f "$COMPOSE_FILE" up -d
+
+echo "==========================================="
+echo "[deploy] 关闭维护模式..."
+echo "==========================================="
+sleep 5  # 等待 nginx 启动
+bash docker/maintenance.sh off || true  # 如果 nginx 未就绪则跳过
+
+echo ""
+echo "[deploy] 完成。当前容器状态:"
+docker compose -f "$COMPOSE_FILE" ps
